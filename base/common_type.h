@@ -14,7 +14,7 @@ typedef enum
 	OK = 0,
 	FALSE = 0,
 	TRUE = 1,
-} boolean;
+} BOOL;
 #endif // !_boolean
 
 #ifndef NULL

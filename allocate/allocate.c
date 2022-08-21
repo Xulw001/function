@@ -13,34 +13,27 @@
 #include <stdio.h>
 #include <string.h>
 
-#ifdef _WIN32
-HANDLE mp_mutex = NULL;
-#else
-pthread_mutex_t mp_mutex = PTHREAD_MUTEX_INITIALIZER;
-#endif
 static struct HeapInstance *_instance;
+enum STATUS { LOCK, FREE };
+unsigned int lock_t = FREE;
 
-BOOL lock() {
+void lock() {
 #ifdef _MulThread
 #ifdef _WIN32
-  return (0 == WaitForSingleObject(mp_mutex, INFINITE));
+  while (_InterlockedCompareExchange(&lock_t, LOCK, FREE) == LOCK)
+    //返回lock_t初始值
+    ;
 #else
-  return (0 == pthread_mutex_lock(&mp_mutex));
+  while (__sync_bool_compare_and_swap(&lock_t, FREE, LOCK) ==
+         0)  //写入新值成功返回1，写入失败返回0
+    ;
 #endif
 #endif
 }
 
-BOOL unlock() {
+void unlock() {
 #ifdef _MulThread
-#ifdef _WIN32
-  if (ReleaseMutex(mp_mutex)) {
-    return TRUE;
-  } else {
-    return FALSE;
-  }
-#else
-  return (0 == pthread_mutex_unlock(&mp_mutex));
-#endif
+  lock_t = FREE;
 #endif
 }
 
@@ -453,12 +446,6 @@ void createHeapManage() {
     _instance = (struct HeapInstance *)malloc(sizeof(struct HeapInstance));
     _instance->head.next = _instance->head.prev = &_instance->head;
   }
-
-#ifdef _WIN32
-  if (mp_mutex == NULL) {
-    mp_mutex = CreateMutex(NULL, FALSE, "heapMutex");
-  }
-#endif
 
   struct HeapBlock *pHeap = (struct HeapBlock *)_allocate_block(1, 0);
   if (pHeap != NULL) {

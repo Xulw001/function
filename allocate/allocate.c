@@ -78,6 +78,9 @@ static void *_allocate_block(int mode, unsigned int unMemSize) {
   }
 #elif defined(_WIN32)
   hGlobal = GlobalAlloc(GMEM_FIXED, unActMemsize);
+  if (hGlobal == 0) {
+    return 0;
+  }
   pReturn_code = GlobalLock(hGlobal);
   if (pReturn_code == (void *)0) {
     return 0;

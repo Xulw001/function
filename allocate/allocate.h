@@ -1,5 +1,6 @@
 #pragma once
 #include "..\base\functional.h"
+#include "..\thread\lock.h"
 
 struct Heapinf {
   unsigned int unMem_flg;

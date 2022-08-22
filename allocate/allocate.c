@@ -9,40 +9,18 @@
 #endif
 
 #include <malloc.h>
-#include <pthread.h>
 #include <stdio.h>
 #include <string.h>
 
 static struct HeapInstance *_instance;
-enum STATUS { LOCK, FREE };
-unsigned int lock_t = FREE;
-
-void lock() {
-#ifdef _MulThread
-#ifdef _WIN32
-  while (_InterlockedCompareExchange(&lock_t, LOCK, FREE) == LOCK)
-    //返回lock_t初始值
-    ;
-#else
-  while (__sync_bool_compare_and_swap(&lock_t, FREE, LOCK) ==
-         0)  //写入新值成功返回1，写入失败返回0
-    ;
-#endif
-#endif
-}
-
-void unlock() {
-#ifdef _MulThread
-  lock_t = FREE;
-#endif
-}
+static unsigned int lock_allocate = FREE;
 
 #define list_add_tail_safe(ptr, list) \
-  ({                                  \
-    lock();                           \
+  {                                   \
+    lock(&lock_allocate);             \
     list_add_tail(ptr, list);         \
-    unlock();                         \
-  })
+    unlock(&lock_allocate);           \
+  }
 
 static void *_allocate_block(int mode, unsigned int unMemSize) {
 #ifdef _WIN32
@@ -124,7 +102,7 @@ struct HeapBlock *hasNext(struct HeapBlock *cur, struct list_head *head,
   return list_entry(cur->list.next, struct HeapBlock, list);
 #else
   struct HeapBlock *next = 0;
-  lock();
+  lock(&lock_allocate);
   cur = list_entry(cur->list.next, struct HeapBlock, list);
   for (; &cur->list != head;
        cur = list_entry(cur->list.next, struct HeapBlock, list)) {
@@ -133,7 +111,7 @@ struct HeapBlock *hasNext(struct HeapBlock *cur, struct list_head *head,
       break;
     }
   }
-  unlock();
+  unlock(&lock_allocate);
   return next;
 #endif
 }
@@ -149,9 +127,9 @@ static void *_allocate_sub_block(unsigned int unMemAct_size, unsigned int tid) {
 
   head = &_instance->head;
 
-  lock();
+  lock(&lock_allocate);
   pHeap = list_entry(head->next, struct HeapBlock, list);
-  unlock();
+  unlock(&lock_allocate);
 
   if (unMemAct_size > PAGESIZE) {
     pHeap = (struct HeapBlock *)_allocate_block(
@@ -290,7 +268,7 @@ int _is_last(struct list_head *list) {
   struct Heapinf *inf = NULL;
   pid = pthread_self();
   head = list;
-  lock();
+  lock(&lock_allocate);
   pHeap = list_entry(head->next, struct HeapBlock, list);
   for (; &pHeap->list != head;
        pHeap = list_entry(pHeap->list.next, struct HeapBlock, list)) {
@@ -303,7 +281,7 @@ int _is_last(struct list_head *list) {
       }
     }
   }
-  unlock();
+  unlock(&lock_allocate);
   if (count == 1) {
     return 1;
   } else {
@@ -419,9 +397,9 @@ static int _release_sub_block(void *ptr) {
       goto EXIT;
   }
 
-  lock();
+  lock(&lock_allocate);
   list_del(&pHeap->list);
-  unlock();
+  unlock(&lock_allocate);
 #if defined(_UseVitralMemory)
   VirtualFree(pHeap, 0x00, MEM_RELEASE);
 #elif defined(_WIN32)

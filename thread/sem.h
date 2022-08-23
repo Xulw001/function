@@ -1,23 +1,27 @@
-#ifdef _WIN32
+#pragma once
+#ifndef _WIN32
 #include <sys/ipc.h>
 #include <sys/sem.h>
 #else
-#include <synchapi.h>
+#include <windows.h>
 #endif
 
+#ifndef _WIN32
 union semun {
   int val;               // cmd == SETVAL
-  struct semid_ds *buf;  // cmd == IPC_SETªÚ’ﬂ cmd == IPC_STAT
-  ushort *array;         // cmd == SETALL£¨ªÚ cmd = GETALL
+  struct semid_ds *buf;  // cmd == IPC_SET cmd == IPC_STAT
+  ushort *array;         // cmd == SETALL cmd = GETALL
 };
+#define HANDLE int
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-int sem_init(int* sem_id);
-int sem_del(int sem_id);
-int sem_p(int sem_id);
-int sem_v(int sem_id)
-int sem_set(int sem_id, int val);
+int sem_open(HANDLE *sem_id, int val, int max);
+int sem_del(HANDLE sem_id);
+int sem_p(HANDLE sem_id);
+int sem_v(HANDLE sem_id, int val);
 #ifdef __cplusplus
 }
 #endif

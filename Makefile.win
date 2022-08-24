@@ -1,0 +1,48 @@
+MAKE := mingw32-make
+CC := gcc
+CXX := g++
+RM := del /s /q
+
+## Include Dir
+INCLUDE-DIR := $(C_HOME)/include
+INCLUDE = $(if $(INCLUDE-DIR),$(addprefix -I,$(INCLUDE-DIR)),)
+
+TARGET := Test.exe
+
+TARGET_ARCH = -m32 -fPIC
+LIBDIR = $(addprefix -L,$(LIBDIR32))
+LDLIBS = -lpthread
+
+## C Pre Processor Options (Multi-thread)
+CPPFLAGS := -D_REENTRANT -D_MulThread -O2 -D_WIN32_WINNT=0x0600
+## C Compile Options
+CFLAGS :=
+## C++ Compile Options
+CXXFLAGS :=
+## Link Options (Produce Dynamic Library)
+## LDFLAGS := -shared
+CPPFLAGS += $(INCLUDE)
+
+## Debug Option ##-Werror 
+ifeq ($(MAKECMDGOALS), debug)
+	CFLAGS += -g -D_DEBUG 
+	CXXFLAGS += -g -D_DEBUG 
+endif
+
+SRC = $(wildcard allocate/*.c base/*.c thread/*.c *.c)
+OBJ = $(SRC:.c=.o) $(SRCXX:.cpp=.o)
+
+all : $(TARGET)
+debug : $(TARGET)
+
+clean:
+	@-$(RM) $(TARGET) >nul 2>&1
+	@-$(RM) *.o thread\*.o >nul 2>&1
+	@-$(RM) thread\*.o >nul 2>&1
+	@-$(RM) allocate\*.o >nul 2>&1
+
+$(TARGET) : $(OBJ)
+	$(CXX) $(LDFLAGS) $(TARGET_ARCH) $^ $(LIBDIR) $(LDLIBS) -o $@
+
+%.o : %.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(TARGET_ARCH) -c -o $@ $<

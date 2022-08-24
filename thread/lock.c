@@ -1,6 +1,6 @@
 #include "lock.h"
 #ifdef _WIN32
-#include <synchapi.h>
+#include <windows.h>
 #endif
 
 void lock(unsigned int* lock_t) {

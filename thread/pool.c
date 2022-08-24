@@ -42,7 +42,9 @@ static u_int __stdcall execute(void* argvs) {
 #endif
       goto Error;
     }
-
+#ifdef _DEBUG
+    printf("sub success\n");
+#endif
     task = pool->tasks;
     pool->tasks = task->next;
     if (pool->tasks == 0x00) {
@@ -139,12 +141,17 @@ int destroyPool(struct thread_pool* pool) {
   if (pool->shutdown) {
     return 0;
   }
-
-  pool->shutdown = 1;
-
 #ifndef _WIN32
+  pthread_mutex_lock(&pool->lock_ready);
+#else
+  AcquireSRWLockExclusive(&pool->lock_ready);
+#endif
+  pool->shutdown = 1;
+#ifndef _WIN32
+  pthread_mutex_unlock(&pool->lock_ready);
   pthread_cond_broadcast(&pool->task_ready);
 #else
+  ReleaseSRWLockExclusive(&pool->lock_ready);
   WakeAllConditionVariable(&pool->task_ready);
 #endif
 
@@ -192,7 +199,6 @@ int destroyPool(struct thread_pool* pool) {
 
 int addTaskPool(struct thread_pool* pool, void* (*execute)(void*), void* args,
                 int keep_alive) {
-  int ret;
   struct task* work_task = NULL;
 
   if (execute == NULL) {
@@ -254,6 +260,9 @@ int addTaskPool(struct thread_pool* pool, void* (*execute)(void*), void* args,
     pool->end->next = work_task;
     pool->end = work_task;
   }
+#ifdef _DEBUG
+  printf("add success\n");
+#endif
 #ifndef _WIN32
   pthread_mutex_unlock(&pool->lock_ready);
   pthread_cond_signal(&pool->task_ready);

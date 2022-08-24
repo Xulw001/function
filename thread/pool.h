@@ -10,7 +10,7 @@
 #define mtx_t pthread_mutex_t
 #define cond_t pthread_cond_t
 #else
-#define thrd_t HANDLE
+#define thrd_t uintptr_t
 #define mtx_t SRWLOCK
 #define cond_t CONDITION_VARIABLE
 #endif

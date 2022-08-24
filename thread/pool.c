@@ -7,6 +7,9 @@
 #else
 #include <process.h>
 #endif
+#ifdef _DEBUG
+#include <stdio.h>
+#endif
 
 #ifndef _WIN32
 static void* execute(void* argvs) {
@@ -158,11 +161,20 @@ int destroyPool(struct thread_pool* pool) {
     }
   }
 
+#ifdef _DEBUG
+  int count = 0;
+#endif
   while (pool->tasks) {
     end_task = pool->tasks;
     pool->tasks = end_task->next;
     free(end_task);
+#ifdef _DEBUG
+    count++;
+#endif
   }
+#ifdef _DEBUG
+  printf("killed = %d\n", count);
+#endif
 
 #ifndef _WIN32
   pthread_cond_destroy(&pool->task_empty);
@@ -179,7 +191,7 @@ int destroyPool(struct thread_pool* pool) {
 }
 
 int addTaskPool(struct thread_pool* pool, void* (*execute)(void*), void* args,
-                 int keep_alive) {
+                int keep_alive) {
   int ret;
   struct task* work_task = NULL;
 

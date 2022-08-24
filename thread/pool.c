@@ -123,8 +123,8 @@ int createPool(struct thread_pool** pool, int max_thread, int onfull) {
 #ifndef _WIN32
     if (pthread_create(&(*pool)->threads[i], NULL, execute, (void*)*pool) != 0)
 #else
-    if ((*pool)->threads[i] =
-            _beginthreadex(NULL, 0, execute, (void*)*pool, 0, 0) == 0)
+    if (((*pool)->threads[i] =
+            _beginthreadex(NULL, 0, execute, (void*)*pool, 0, 0)) == 0)
 #endif
     {
       destroyPool(*pool);
@@ -141,17 +141,11 @@ int destroyPool(struct thread_pool* pool) {
   if (pool->shutdown) {
     return 0;
   }
-#ifndef _WIN32
-  pthread_mutex_lock(&pool->lock_ready);
-#else
-  AcquireSRWLockExclusive(&pool->lock_ready);
-#endif
   pool->shutdown = 1;
+
 #ifndef _WIN32
-  pthread_mutex_unlock(&pool->lock_ready);
   pthread_cond_broadcast(&pool->task_ready);
 #else
-  ReleaseSRWLockExclusive(&pool->lock_ready);
   WakeAllConditionVariable(&pool->task_ready);
 #endif
 

@@ -1,8 +1,11 @@
 #include "lock.h"
+#ifdef _WIN32
+#include <synchapi.h>
+#endif
 
 void lock(unsigned int* lock_t) {
 #ifdef _WIN32
-  while (_InterlockedCompareExchange(lock_t, LOCK, FREE) == LOCK)
+  while (_InterlockedCompareExchange((unsigned long*)lock_t, LOCK, FREE) == LOCK)
     //∑µªÿlock_t≥ı º÷µ
     ;
 #else

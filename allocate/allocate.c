@@ -4,6 +4,7 @@
 #include <windows.h>
 #else
 #include <fcntl.h>
+#include <pthread.h>
 #include <sys/mman.h>
 #include <unistd.h>
 #endif
@@ -266,7 +267,11 @@ int _is_last(struct list_head *list) {
   struct list_head *head = NULL;
   struct HeapBlock *pHeap = NULL;
   struct Heapinf *inf = NULL;
+#ifndef _WIN32
   pid = pthread_self();
+#else
+  pid = GetCurrentThreadId();
+#endif
   head = list;
   lock(&lock_allocate);
   pHeap = list_entry(head->next, struct HeapBlock, list);
@@ -429,7 +434,11 @@ void createHeapManage() {
   if (pHeap != NULL) {
     list_add_tail(&pHeap->list, &_instance->head);
 #ifdef _MulThread
+#ifndef _WIN32
     pHeap->tid = pthread_self();
+#else
+    pHeap->tid = GetCurrentThreadId();
+#endif
 #else
     pHeap->tid = 0;
 #endif

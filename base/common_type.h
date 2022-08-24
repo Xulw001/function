@@ -44,10 +44,3 @@ typedef long long int64_t;
 #ifndef uint64_t
 typedef unsigned long long uint64_t;
 #endif
-#ifndef _SIZE_T_DEFINED
-#ifdef _WIN64
-typedef unsigned long long size_t;
-#else
-typedef unsigned int size_t;
-#endif
-#endif

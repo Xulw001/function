@@ -4,15 +4,12 @@
 #else
 #include <windows.h>
 #endif
+#include "sem.h"
 
 #ifndef _WIN32
 #define thrd_t pthread_t
-#define mtx_t pthread_mutex_t
-#define cond_t pthread_cond_t
 #else
 #define thrd_t uintptr_t
-#define mtx_t SRWLOCK
-#define cond_t CONDITION_VARIABLE
 #endif
 
 struct task {
@@ -23,16 +20,15 @@ struct task {
 };
 
 struct thread_pool {
-  unsigned int shutdown;     // ¼àÌıÏß³Ì³ØÊÇ·ñÖÕÖ¹
-  unsigned int max_threads;  // Ïß³Ì³Ø×î´óÈİÁ¿
-  unsigned int t_free;       // ¿ÕÏĞÏß³ÌÊı(·Ç³Ö¾Ã/¿ÕÏĞ)
-  unsigned int onfull;  // Ïß³ÌÊıÉÏÏŞ´¦Àí  0: Ö±½Ó·µ»Ø 1£ºµÈ´ı¿Õ¶ÓÁĞ
-  struct task *tasks, *end;  // ÈÎÎñĞÅÏ¢
-  thrd_t* threads;           // Ïß³ÌĞÅÏ¢
-  mtx_t lock_ready;
-  mtx_t lock_empty;
-  cond_t task_ready;  // ÈÎÎñ´ı´¦Àí
-  cond_t task_empty;  // ÈÎÎñ¶ÓÁĞÎ´Âú
+  unsigned int shutdown;     // ç›‘å¬çº¿ç¨‹æ± æ˜¯å¦ç»ˆæ­¢
+  unsigned int max_threads;  // çº¿ç¨‹æ± æœ€å¤§å®¹é‡
+  unsigned int t_free;       // ç©ºé—²çº¿ç¨‹æ•°(éæŒä¹…/ç©ºé—²)
+  unsigned int onfull;  // çº¿ç¨‹æ•°ä¸Šé™å¤„ç†  0: ç›´æ¥è¿”å› 1ï¼šç­‰å¾…ç©ºé˜Ÿåˆ—
+  struct task *tasks, *end;  // ä»»åŠ¡ä¿¡æ¯
+  thrd_t* threads;           // çº¿ç¨‹ä¿¡æ¯
+  unsigned int lock_task;	// ä»»åŠ¡é˜Ÿåˆ—é”
+  HANDLE task_ready;  // ä»»åŠ¡å¾…å¤„ç†
+  HANDLE task_empty;  // ä»»åŠ¡é˜Ÿåˆ—æœªæ»¡
 };
 
 #ifdef __cplusplus

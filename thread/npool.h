@@ -1,4 +1,5 @@
 #pragma once
+#ifdef _USE_CAS
 #ifndef _WIN32
 #include <pthread.h>
 #else
@@ -43,3 +44,4 @@ int addTaskPool(struct thread_pool* pool, void* (*execute)(int*, void*),
 #ifdef __cplusplus
 }
 #endif
+#endif _USE_CAS

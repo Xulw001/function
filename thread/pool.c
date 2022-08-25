@@ -1,4 +1,5 @@
 #include "pool.h"
+#ifndef USE_CAS
 
 #include <malloc.h>
 #include <string.h>
@@ -287,3 +288,4 @@ int addTaskPool(struct thread_pool* pool, void* (*execute)(int*, void*),
 
   return 0;
 }
+#endif

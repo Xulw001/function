@@ -1,6 +1,6 @@
 #include "npool.h"
 #include "lock.h"
-
+#ifdef _USE_CAS
 #include <malloc.h>
 #include <string.h>
 #ifndef _WIN32
@@ -236,3 +236,4 @@ int addTaskPool(struct thread_pool* pool, void* (*execute)(int*, void*),
 
   return 0;
 }
+#endif

@@ -141,11 +141,17 @@ int destroyPool(struct thread_pool* pool) {
   if (pool->shutdown) {
     return 0;
   }
-  pool->shutdown = 1;
-
 #ifndef _WIN32
+  pthread_mutex_lock(&pool->lock_ready);
+#else
+  AcquireSRWLockExclusive(&pool->lock_ready);
+#endif
+  pool->shutdown = 1;
+#ifndef _WIN32
+  pthread_mutex_unlock(&pool->lock_ready);
   pthread_cond_broadcast(&pool->task_ready);
 #else
+  ReleaseSRWLockExclusive(&pool->lock_ready);
   WakeAllConditionVariable(&pool->task_ready);
 #endif
 

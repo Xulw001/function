@@ -56,7 +56,8 @@ int sem_v(HANDLE sem_id, int val) {
   sem_buf.sem_flg = SEM_UNDO;
   if (semop(sem_id, &sem_buf, 1) == -1) {
 #else
-  if (ReleaseSemaphore(sem_id, val, NULL) == 0) {
+  while (ReleaseSemaphore(sem_id, val, NULL) == 0) {
+    if (GetLastError() != 0x12A)
 #endif
     return 1;
   }

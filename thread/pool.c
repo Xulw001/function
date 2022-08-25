@@ -22,7 +22,6 @@ static u_int __stdcall execute(void* argvs) {
   struct thread_pool* pool = (struct thread_pool*)argvs;
   while (!keepalive) {
     sem_p(pool->task_ready);
-
 #ifndef _WIN32
     if (__sync_bool_compare_and_swap(&pool->shutdown, 0, 0) == 0)
 #else
@@ -30,7 +29,7 @@ static u_int __stdcall execute(void* argvs) {
 #endif
     {
 #ifdef _DEBUG
-    printf("shutdown success\n");
+      printf("shutdown success\n");
 #endif
       goto Error;
     }
@@ -46,7 +45,7 @@ static u_int __stdcall execute(void* argvs) {
     }
     unlock(&pool->lock_task);
 
-    task->execute(task->args);
+    task->execute(&pool->shutdown, task->args);
 
     if (task->keepalive) {
 #ifndef _WIN32
@@ -174,8 +173,8 @@ int destroyPool(struct thread_pool* pool) {
   return 0;
 }
 
-int addTaskPool(struct thread_pool* pool, void* (*execute)(void*), void* args,
-                int keep_alive) {
+int addTaskPool(struct thread_pool* pool, void* (*execute)(int*, void*),
+                void* args, int keep_alive) {
   struct task* work_task = NULL;
 
   if (execute == NULL) {

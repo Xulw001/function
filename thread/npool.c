@@ -1,4 +1,4 @@
-#include "npool.h"
+#include "pool.h"
 #include "lock.h"
 #ifdef _USE_CAS
 #include <malloc.h>

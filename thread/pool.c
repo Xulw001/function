@@ -1,6 +1,5 @@
 #include "pool.h"
-#ifndef USE_CAS
-
+#ifndef _USE_CAS
 #include <malloc.h>
 #include <string.h>
 #ifndef _WIN32

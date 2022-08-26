@@ -16,7 +16,7 @@
 #endif
 
 struct task {
-  void* (*execute)(void*);
+  void* (*execute)(int*, void*);
   void* args;
   int keepalive;
   struct task* next;
@@ -40,8 +40,8 @@ extern "C" {
 #endif
 int createPool(struct thread_pool** pool, int max_thread, int onfull);
 int destroyPool(struct thread_pool* pool);
-int addTaskPool(struct thread_pool* pool, void* (*execute)(void*), void* args,
-                int keep_alive);
+int addTaskPool(struct thread_pool* pool, void* (*execute)(int*, void*),
+                void* args, int keep_alive);
 #ifdef __cplusplus
 }
 #endif

@@ -1,4 +1,5 @@
-#include "pool.h"
+#include "npool.h"
+#include "lock.h"
 
 #include <malloc.h>
 #include <string.h>
@@ -20,56 +21,39 @@ static u_int __stdcall execute(void* argvs) {
   struct task* task = 0;
   struct thread_pool* pool = (struct thread_pool*)argvs;
   while (!keepalive) {
+    sem_p(pool->task_ready);
 #ifndef _WIN32
-    pthread_mutex_lock(&pool->lock_ready);
+    if (__sync_bool_compare_and_swap(&pool->shutdown, 0, 0) == 0)
 #else
-    AcquireSRWLockExclusive(&pool->lock_ready);
+    if (_InterlockedCompareExchange((unsigned long*)&pool->shutdown, 0, 0) == 1)
 #endif
-    while (pool->tasks == 0 && pool->shutdown == 0) {
-#ifndef _WIN32
-      pthread_cond_wait(&pool->task_ready, &pool->lock_ready);
-#else
-      SleepConditionVariableSRW(&pool->task_ready, &pool->lock_ready, INFINITE,
-                                0);
-#endif
-    }
-
-    if (pool->shutdown) {
-#ifndef _WIN32
-      pthread_mutex_unlock(&pool->lock_ready);
-#else
-      ReleaseSRWLockExclusive(&pool->lock_ready);
+    {
+#ifdef _DEBUG
+      printf("shutdown success\n");
 #endif
       goto Error;
     }
 #ifdef _DEBUG
     printf("sub success\n");
 #endif
+
+    lock(&pool->lock_task);
     task = pool->tasks;
     pool->tasks = task->next;
     if (pool->tasks == 0x00) {
       pool->end = 0x00;
     }
-#ifndef _WIN32
-    pthread_mutex_unlock(&pool->lock_ready);
-#else
-    ReleaseSRWLockExclusive(&pool->lock_ready);
-#endif
+    unlock(&pool->lock_task);
 
     task->execute(&pool->shutdown, task->args);
 
     if (task->keepalive) {
 #ifndef _WIN32
-      pthread_mutex_lock(&pool->lock_empty);
-      pool->t_free++;
-      pthread_mutex_unlock(&pool->lock_empty);
-      pthread_cond_signal(&pool->task_empty);
+      __sync_fetch_and_add(&pool->t_free, 1);
 #else
-      AcquireSRWLockExclusive(&pool->lock_empty);
-      pool->t_free++;
-      ReleaseSRWLockExclusive(&pool->lock_empty);
-      WakeConditionVariable(&pool->task_empty);
+      _InterlockedIncrement((unsigned long*)&pool->t_free);
 #endif
+      sem_v(pool->task_empty, 1);
     }
 
     free(task);
@@ -101,30 +85,27 @@ int createPool(struct thread_pool** pool, int max_thread, int onfull) {
   (*pool)->max_threads = max_thread;
   (*pool)->t_free = max_thread;
   (*pool)->shutdown = 0;
+  (*pool)->lock_task = FREE;
   (*pool)->tasks = (*pool)->end = 0;
   (*pool)->threads = (thrd_t*)malloc(sizeof(thrd_t) * max_thread);
   if (NULL == (*pool)->threads) {
     return -1;
   }
 
-#ifndef _WIN32
-  pthread_mutex_init(&((*pool)->lock_ready), 0);
-  pthread_mutex_init(&((*pool)->lock_empty), 0);
-  pthread_cond_init(&((*pool)->task_ready), 0);
-  pthread_cond_init(&((*pool)->task_empty), 0);
-#else
-  InitializeSRWLock(&((*pool)->lock_ready));
-  InitializeSRWLock(&((*pool)->lock_empty));
-  InitializeConditionVariable(&((*pool)->task_ready));
-  InitializeConditionVariable(&((*pool)->task_empty));
-#endif
+  if (sem_open(&((*pool)->task_ready), 0, max_thread) != 0) {
+    return -2;
+  }
+
+  if (sem_open(&((*pool)->task_empty), max_thread, max_thread) != 0) {
+    return -2;
+  }
 
   for (int i = 0; i < max_thread; i++) {
 #ifndef _WIN32
     if (pthread_create(&(*pool)->threads[i], NULL, execute, (void*)*pool) != 0)
 #else
     if (((*pool)->threads[i] =
-             _beginthreadex(NULL, 0, execute, (void*)*pool, 0, 0)) == 0)
+            _beginthreadex(NULL, 0, execute, (void*)*pool, 0, 0)) == 0)
 #endif
     {
       destroyPool(*pool);
@@ -138,22 +119,21 @@ int createPool(struct thread_pool** pool, int max_thread, int onfull) {
 int destroyPool(struct thread_pool* pool) {
   struct task* end_task = NULL;
 
-  if (pool->shutdown) {
+  if (pool == 0 || pool->shutdown) {
     return 0;
   }
 #ifndef _WIN32
-  pthread_mutex_lock(&pool->lock_ready);
+  __sync_lock_test_and_set(&pool->shutdown, 1);
 #else
-  AcquireSRWLockExclusive(&pool->lock_ready);
+  InterlockedExchange((unsigned long*)&pool->shutdown, 1);
 #endif
-  pool->shutdown = 1;
-#ifndef _WIN32
-  pthread_mutex_unlock(&pool->lock_ready);
-  pthread_cond_broadcast(&pool->task_ready);
-#else
-  ReleaseSRWLockExclusive(&pool->lock_ready);
-  WakeAllConditionVariable(&pool->task_ready);
+
+  if (sem_v(pool->task_ready, pool->max_threads) != 0) {
+#ifdef _WIN32
+    if (GetLastError() != 0x12A)  // Too many posts were made to a semaphore.
 #endif
+      return -2;
+  }
 
   for (int i = 0; i < pool->max_threads; i++) {
     if (pool->threads[i] != 0) {
@@ -183,12 +163,8 @@ int destroyPool(struct thread_pool* pool) {
   printf("killed = %d\n", count);
 #endif
 
-#ifndef _WIN32
-  pthread_cond_destroy(&pool->task_empty);
-  pthread_cond_destroy(&pool->task_empty);
-  pthread_mutex_destroy(&pool->lock_ready);
-  pthread_mutex_destroy(&pool->lock_empty);
-#endif
+  sem_del(pool->task_empty);
+  sem_del(pool->task_ready);
 
   free(pool->threads);
 
@@ -210,34 +186,16 @@ int addTaskPool(struct thread_pool* pool, void* (*execute)(int*, void*),
   }
 
 #ifndef _WIN32
-  pthread_mutex_lock(&pool->lock_empty);
+  while (__sync_bool_compare_and_swap(&pool->t_free, 0, 0) == 1)
 #else
-  AcquireSRWLockExclusive(&pool->lock_empty);
+  while (_InterlockedCompareExchange((unsigned long*)&pool->t_free, 0, 0) == 0)
 #endif
-
-  while (pool->t_free == 0) {
+  {
     if (pool->onfull == 0) {
-#ifndef _WIN32
-      pthread_mutex_unlock(&pool->lock_empty);
-#else
-      ReleaseSRWLockExclusive(&pool->lock_empty);
-#endif
       return 1;
     }
-
-#ifndef _WIN32
-    pthread_cond_wait(&pool->task_empty, &pool->lock_empty);
-#else
-    SleepConditionVariableSRW(&pool->task_empty, &pool->lock_empty, INFINITE,
-                              0);
-#endif
+    sem_p(pool->task_empty);
   }
-
-#ifndef _WIN32
-  pthread_mutex_unlock(&pool->lock_empty);
-#else
-  ReleaseSRWLockExclusive(&pool->lock_empty);
-#endif
 
   work_task = (struct task*)malloc(sizeof(struct task));
   if (NULL == work_task) {
@@ -249,11 +207,7 @@ int addTaskPool(struct thread_pool* pool, void* (*execute)(int*, void*),
   work_task->keepalive = keep_alive;
   work_task->next = NULL;
 
-#ifndef _WIN32
-  pthread_mutex_lock(&pool->lock_ready);
-#else
-  AcquireSRWLockExclusive(&pool->lock_ready);
-#endif
+  lock(&pool->lock_task);
   if (NULL == pool->end) {
     pool->tasks = pool->end = work_task;
   } else {
@@ -263,26 +217,21 @@ int addTaskPool(struct thread_pool* pool, void* (*execute)(int*, void*),
 #ifdef _DEBUG
   printf("add success\n");
 #endif
-#ifndef _WIN32
-  pthread_mutex_unlock(&pool->lock_ready);
-  pthread_cond_signal(&pool->task_ready);
-#else
-  ReleaseSRWLockExclusive(&pool->lock_ready);
-  WakeConditionVariable(&pool->task_ready);
-#endif
+
+  if (sem_v(pool->task_ready, 1) != 0) {
+    unlock(&pool->lock_task);
+    return -4;
+  }
+
+  unlock(&pool->lock_task);
 
   if (keep_alive) {
 #ifndef _WIN32
-    pthread_mutex_lock(&pool->lock_empty);
+    __sync_fetch_and_sub(&pool->t_free, 1);
 #else
-    AcquireSRWLockExclusive(&pool->lock_ready);
+    _InterlockedDecrement((unsigned long*)&pool->t_free);
 #endif
-    pool->t_free--;
-#ifndef _WIN32
-    pthread_mutex_unlock(&pool->lock_empty);
-#else
-    ReleaseSRWLockExclusive(&pool->lock_ready);
-#endif
+    sem_p(pool->task_empty);
   }
 
   return 0;

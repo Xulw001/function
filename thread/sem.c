@@ -55,10 +55,19 @@ int sem_v(HANDLE sem_id, int val) {
   sem_buf.sem_op = val;  // V
   sem_buf.sem_flg = SEM_UNDO;
   if (semop(sem_id, &sem_buf, 1) == -1) {
-#else
-  if (ReleaseSemaphore(sem_id, val, NULL) == 0) {
-#endif
     return 1;
+#else
+  int loop = 5;
+  while (val) {
+    if (ReleaseSemaphore(sem_id, 1, 0) == 0) {
+      if (GetLastError() == 0x12A && loop--) {
+        Sleep(1000);
+        continue;
+      }
+      return 1;
+    }
+    val--;
+#endif
   }
 
   return 0;

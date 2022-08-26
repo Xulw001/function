@@ -1,0 +1,47 @@
+MAKE := gmake
+CC := gcc
+CXX := g++
+RM := rm -rf
+SED := sed
+MV := mv
+
+## Include Dir
+INCLUDE-DIR := $(C_HOME)/include
+INCLUDE = $(if $(INCLUDE-DIR),$(addprefix -I,$(INCLUDE-DIR)),)
+
+TARGET := Test
+
+TARGET_ARCH = -m32 -fPIC
+LIBDIR = $(addprefix -L,$(LIBDIR32))
+LDLIBS = -lpthread
+
+## C Pre Processor Options (Multi-thread)
+CPPFLAGS := -D_REENTRANT -D_MulThread -O2 -Werror
+## C Compile Options
+CFLAGS :=
+## C++ Compile Options
+CXXFLAGS :=
+## Link Options (Produce Dynamic Library)
+## LDFLAGS := -shared
+CPPFLAGS += $(INCLUDE)
+
+## Debug Option
+ifeq ($(MAKECMDGOALS), debug)
+	CFLAGS += -g -D_DEBUG
+	CXXFLAGS += -g -D_DEBUG
+endif
+
+SRC = $(wildcard allocate/*.c base/*.c thread/*.c *.c)
+OBJ = $(SRC:.c=.o) $(SRCXX:.cpp=.o)
+
+all : $(TARGET)
+debug : $(TARGET)
+
+clean:
+	@$(RM) $(OBJ) $(TARGET)
+
+$(TARGET) : $(OBJ)
+	        $(CXX) $(LDFLAGS) $(TARGET_ARCH) $^ $(LIBDIR) $(LDLIBS) -o $@
+
+%.o : %.c
+	        $(CC) $(CFLAGS) $(CPPFLAGS) $(TARGET_ARCH) -c -o $@ $<

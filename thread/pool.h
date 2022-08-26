@@ -1,10 +1,10 @@
 #pragma once
-#ifndef _USE_CAS
 #ifndef _WIN32
 #include <pthread.h>
 #else
 #include <windows.h>
 #endif
+#include "sem.h"
 
 #ifndef _WIN32
 #define thrd_t pthread_t
@@ -17,23 +17,31 @@
 #endif
 
 struct task {
-  void* (*execute)(int*, void*);
+  void* (*execute)(int*,
+                   void*);  // first args must be type int*,execute function
+                            // should use first args kill the running thread
   void* args;
   int keepalive;
   struct task* next;
 };
 
 struct thread_pool {
-  unsigned int shutdown;     // 监听线程池是否终止
-  unsigned int max_threads;  // 线程池最大容量
-  unsigned int t_free;       // 空闲线程数(非持久/空闲)
-  unsigned int onfull;  // 线程数上限处理  0: 直接返回 1：等待空队列
-  struct task *tasks, *end;  // 任务信息
-  thrd_t* threads;           // 线程信息
+  unsigned int shutdown;     // sign pool shutdown
+  unsigned int max_threads;  // max thread num
+  unsigned int t_free;       // free thread num
+  unsigned int onfull;  // add task when pool is full  0: return 1??wait empty
+  struct task *tasks, *end;  // task queue
+  thrd_t* threads;           // thread handle
+#ifndef _USE_CAS
   mtx_t lock_ready;
   mtx_t lock_empty;
-  cond_t task_ready;  // 任务待处理
-  cond_t task_empty;  // 任务队列未满
+  cond_t task_ready;  // 
+  cond_t task_empty;  // 
+#else
+  unsigned int lock_task;    // lock for task queue
+  HANDLE task_ready;         // sign task ready
+  HANDLE task_empty;         // sign task empty
+#endif
 };
 
 #ifdef __cplusplus
@@ -45,5 +53,4 @@ int addTaskPool(struct thread_pool* pool, void* (*execute)(int*, void*),
                 void* args, int keep_alive);
 #ifdef __cplusplus
 }
-#endif
 #endif

@@ -31,7 +31,7 @@ ifeq ($(MAKECMDGOALS), debug)
 	CXXFLAGS += -g -D_DEBUG
 endif
 
-SRC = $(wildcard allocate/*.c base/*.c thread/*.c *.c)
+SRC = $(wildcard allocate/*.c base/*.c thread/*.c algorithm/*.c *.c)
 OBJ = $(SRC:.c=.o) $(SRCXX:.cpp=.o)
 
 all : $(TARGET)

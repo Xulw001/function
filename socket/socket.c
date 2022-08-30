@@ -91,20 +91,20 @@ int __sslErr(char* file, int line, char* fun) {
   return ulErr;
 }
 
-// int __sslChk(SSL* ssl, int ret) {
-//   switch (SSL_get_error(ssl, ret)) {
-//     case SSL_ERROR_NONE:  // ok
-//       return 0;
-//     case SSL_ERROR_WANT_READ:     // read again
-//     case SSL_ERROR_WANT_WRITE:    // write again
-//     case SSL_ERROR_WANT_ACCEPT:   // accept again
-//     case SSL_ERROR_WANT_CONNECT:  // connect again
-//       return 1;
-//     case SSL_ERROR_ZERO_RETURN:  // close
-//     default:
-//       return -1;
-//   }
-// }
+int __sslChk(SSL* ssl, int ret) {
+  switch (SSL_get_error(ssl, ret)) {
+    case SSL_ERROR_NONE:  // ok
+      return 0;
+    case SSL_ERROR_WANT_READ:     // read again
+    case SSL_ERROR_WANT_WRITE:    // write again
+    case SSL_ERROR_WANT_ACCEPT:   // accept again
+    case SSL_ERROR_WANT_CONNECT:  // connect again
+      return 1;
+    case SSL_ERROR_ZERO_RETURN:  // close
+    default:
+      return -1;
+  }
+}
 
 int __load_cert_file(socket_function* owner, const char* key_file,
                      const char* cert_file, int sslV, int filev) {
@@ -282,152 +282,6 @@ socket_function* initClient(socket_option* opt) {
   return fun;
 }
 
-// int __bio_write(socket_function* owner, int* err) {
-//   fd_set fds;
-//   int nfds;
-//   int size, totalSize = 0;
-//   socket_base* mSocket = 0;
-//   socket_buff* mBuf = 0;
-//   struct timeval tvTimeOut;
-//   mSocket = owner->mSocket;
-
-//   if (mSocket->fd == INVALID_SOCKET) {
-//     if ((*err = __connect(owner)) != 0) return -1;
-//   }
-
-//   if (owner->mSocket->opt.rrw_flg == 1) {
-//     mBuf = owner->mSocket->w_buf;
-//   } else {
-//     mBuf = owner->mSocket->r_buf;
-//   }
-
-//   while (totalSize < mBuf->length) {
-//     tvTimeOut.tv_sec = mSocket->opt.timeout;
-//     tvTimeOut.tv_usec = 0;
-//     FD_ZERO(&fds);
-//     FD_SET(mSocket->fd, &fds);
-// #ifdef _WIN32
-//     nfds = select(1, NULL, &fds, NULL, &tvTimeOut);
-// #else
-//     nfds = select(mSocket->fd + 1, NULL, &fds, NULL, &tvTimeOut);
-// #endif
-//     if (nfds == 0) {
-//       return 0;
-//     } else if (nfds < 0) {
-//       ERROUT("select", errno);
-//       *err = errno;
-//       return -1;
-//     }
-
-//     if (FD_ISSET(mSocket->fd, &fds)) {
-//       if (mSocket->opt.ssl_flg != 0 && mSocket->ssl_st->p_flg == 2) {
-//         size = SSL_write(mSocket->ssl_st->ssl, mBuf->p + totalSize,
-//                          mBuf->length - totalSize);
-//         switch (__sslChk(mSocket->ssl_st->ssl, size)) {
-//           case -1:
-//             ERROUT("SSL_write", errno);
-//             *err = errno;
-//             return -1;
-//           case 0:
-//             totalSize += size;
-//             break;
-//           case 1:
-//             break;
-//         }
-//       } else {
-//         size =
-//             send(mSocket->fd, mBuf->p + totalSize, mBuf->length - totalSize,
-//             0);
-//         if (size < 0) {
-//           ERROUT("send", errno);
-//           *err = errno;
-//           return -1;
-//         };
-//         totalSize += size;
-//       }
-//     }
-//   }
-//   mSocket->state = _CS_REQ_SENT;
-//   mBuf->length = 0;
-//   return totalSize;
-// }
-
-// int __bio_read(socket_function* owner, int* err) {
-//   fd_set fds;
-//   int nfds;
-//   int totalSize, size = 0;
-//   socket_base* mSocket = 0;
-//   socket_buff* mBuf = 0;
-//   struct timeval tvTimeOut;
-
-//   mSocket = owner->mSocket;
-//   mBuf = mSocket->r_buf;
-//   totalSize = 0;
-
-//   if (mSocket->fd == INVALID_SOCKET) {
-//     if ((*err = __connect(owner)) != 0) return -1;
-//   }
-
-//   do {
-//     tvTimeOut.tv_sec = 0;
-//     tvTimeOut.tv_usec = mSocket->opt.timeout;
-//     FD_ZERO(&fds);
-//     FD_SET(mSocket->fd, &fds);
-
-// #ifdef _WIN32
-//     nfds = select(1, NULL, &fds, NULL, &tvTimeOut);
-// #else
-//     nfds = select(mSocket->fd + 1, NULL, &fds, NULL, &tvTimeOut);
-// #endif
-//     if (nfds == 0) {
-//       return 0;
-//     } else if (nfds < 0) {
-//       ERROUT("select", errno);
-//       *err = errno;
-//       return -1;
-//     }
-
-//     if (FD_ISSET(mSocket->fd, &fds)) {
-//       if (mSocket->opt.ssl_flg != 0 && mSocket->ssl_st->p_flg == 2) {
-//         size = SSL_read(mSocket->ssl_st->ssl, mBuf->p + totalSize,
-//                         MSGBUF_32K - totalSize);
-//         switch (__sslChk(mSocket->ssl_st->ssl, size)) {
-//           case -1:
-//             ERROUT("SSL_read", errno);
-//             *err = errno;
-//             return -1;
-//           case 0:
-//             totalSize += size;
-//             break;
-//           case 1:
-//             break;
-//         }
-//       } else {
-//         size =
-//             recv(mSocket->fd, mBuf->p + totalSize, MSGBUF_32K - totalSize,
-//             0);
-//         if (size < 0) {
-//           if (size == EAGAIN) {
-//             break;
-//           } else {
-//             ERROUT("recv", errno);
-//             *err = errno;
-//             return -1;
-//           }
-//         }
-//         totalSize += size;
-//       }
-//     }
-//   } while (totalSize <= MSGBUF_32K);
-//   mSocket->state = _CS_REQ_RECV;
-//   if (mBuf->length < totalSize) {
-//     mBuf->length = (totalSize << 0x10) & 0xFFFF0000;
-//   } else {
-//     mBuf->length = 0;
-//   }
-//   return 0;
-// }
-
 int __fin(socket_function* owner) {
   int err = 0, rtv = 0;
   socket_buff* buff = 0;
@@ -435,13 +289,13 @@ int __fin(socket_function* owner) {
   buff = owner->mSocket->buf;
   switch (owner->mSocket->state) {
     case _CS_REQ_SENT:
-      if (__bio_write(owner->mSocket->fd, buff + buff->r, buff->w - buff->r) <
+      if (__bio_write(owner->mSocket, buff + buff->r, buff->w - buff->r) <
           0) {
         return err;
       }
       break;
     case _CS_REQ_RECV:
-      while ((rtv = __bio_read(owner->mSocket->fd, buff, MSGBUF_32K)) != 0) {
+      while ((rtv = __bio_read(owner->mSocket, buff, MSGBUF_32K)) != 0) {
         if (rtv < 0) {
           return err;
         } else if (rtv < MSGBUF_32K) {
@@ -454,109 +308,6 @@ int __fin(socket_function* owner) {
   owner->mSocket->buf->w = -1;
   return 0;
 }
-
-// int __send(socket_function* owner, const char* buf, int length) {
-//   int size = 0, offset = 0, err = 0;
-//   socket_buff* mBuf = 0;
-
-//   if (owner->mSocket->opt.rrw_flg == 1) {
-//     mBuf = owner->mSocket->w_buf;
-//   } else {
-//     mBuf = owner->mSocket->r_buf;
-//   }
-
-//   if (owner->mSocket->state != _CS_REQ_STARTED ||
-//       owner->mSocket->state != _CS_REQ_SENT ||
-//       owner->mSocket->state != _CS_REQ_RECV) {
-//     ERROUT("send state", owner->mSocket->state);
-//     return STATE_ERR;
-//   }
-
-//   if (owner->mSocket->opt.rrw_flg == 0 &&
-//       owner->mSocket->state == _CS_REQ_RECV && mBuf->length != 0) {
-//     if (owner->mSocket->opt.cls_flg == 1) {
-//       WARNING("send state", owner->mSocket->state);
-//       if ((err = __fin(owner)) < 0) {
-//         return err;
-//       }
-//     } else {
-//       ERROUT("send state", owner->mSocket->state);
-//       return STATE_ERR;
-//     }
-//   }
-
-//   while (MSGBUF_32K - mBuf->length < length) {  // 缓存区容量 < 客户数据
-//     memcpy(mBuf->p + mBuf->length, buf + offset, MSGBUF_32K - mBuf->length);
-//     offset += size - mBuf->length;
-//     mBuf->length = size;
-//     if (__bio_write(owner, &err) < 0) {
-//       return err;
-//     }
-//   }
-//   // 缓存区容量 >= 客户数据
-//   memcpy(mBuf->p + mBuf->length, buf + offset, length - offset);
-//   mBuf->length += length - offset;
-
-//   return length;
-// }
-
-// int __recv(socket_function* owner, const char* buf, int length) {
-//   int size = 0, offset = 0, rdlen = 0, flag = 0, err = 0;
-//   socket_buff* mBuf = 0;
-
-//   mBuf = owner->mSocket->r_buf;
-//   if (owner->mSocket->state != _CS_REQ_SENT ||
-//       owner->mSocket->state != _CS_REQ_RECV) {
-//     ERROUT("recv", STATE_ERR);
-//     return STATE_ERR;
-//   }
-
-//   if (owner->mSocket->opt.rrw_flg == 0 &&
-//       owner->mSocket->state == _CS_REQ_SENT && mBuf->length != 0) {
-//     if ((err = __fin(owner)) < 0) {
-//       return err;
-//     }
-//   }
-
-//   // 读缓冲数据长度
-//   size = (mBuf->length) >> 0x10 & 0x0000FFFF;
-//   if (size == 0x0000) {
-//     size = MSGBUF_32K;
-//     rdlen = mBuf->length;
-//   } else {
-//     rdlen = mBuf->length & 0x0000FFFF;  // 已读长度
-//     flag = 1;                           // socket已空
-//   }
-
-//   if (rdlen >= size) {  // 缓冲区已空
-//   NEXT:
-//     if (__bio_read(owner, &err) < 0) {
-//       return err;
-//     }
-
-//     rdlen = 0;
-//     if (mBuf->length == 0) {
-//       size = MSGBUF_32K;
-//     } else {
-//       size = (mBuf->length) >> 0x10 & 0x0000FFFF;
-//       flag = 1;  // socket已空
-//     }
-//   }
-
-//   if (size - rdlen <= length - offset) {  // 缓冲区未读数据 <= 客户区长度
-//     memcpy(buf + offset, mBuf->p + rdlen, size - rdlen);
-//     offset += size - rdlen;
-//     if (flag) {
-//       return offset;
-//     } else {
-//       goto NEXT;
-//     }
-//   } else {  // 缓冲区未读数据 > 客户区长度
-//     memcpy(buf + offset, mBuf->p + rdlen, length - offset);
-//     mBuf->length += length - offset;
-//     return length;
-//   }
-// }
 
 // int __close0(socket_function* owner) {
 //   if (owner->mSocket->state != _CS_REQ_STARTED) {

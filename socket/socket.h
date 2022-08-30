@@ -87,7 +87,7 @@ typedef struct {
   char nio_flg;  // block/noblock
   char nag_flg;  // 0: 正常socket 1: 关闭Nagle算法 2: 自定义发送
   char cls_flg;  // 0: 正常socket 1: 清空读缓冲
-  char ssl_flg;  // SSL/TLS通信 0: open 1: SSL/TLS
+  char ssl_flg;  // SSL/TLS通信 0: open 1: SSL/TLS/DTLS
   char aio_flg;  // Win/IOCP Linux/epoll
   char resv[2];
   int timeout;
@@ -164,9 +164,10 @@ int __load_cert_file(socket_function* owner, const char* key_file,
 int __open(socket_function* owner);
 int __ssl_connect(socket_function* owner);
 int __sslErr(char* file, int line, char* fun);
+int __sslChk(SSL* ssl_st, int ret);
 
-int __bio_read(SOCKET fd, const char* buf, int size);
-int __bio_write(SOCKET fd, const char* buf, int size);
+int __bio_read(socket_base* socket, const char* buf, int size);
+int __bio_write(socket_base* socket, const char* buf, int size);
 
 // int finalClient(socket_function* fun);
 

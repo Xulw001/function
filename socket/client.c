@@ -139,7 +139,7 @@ int __send(socket_function* owner, const char* buf, int length) {
   }
 
   if (mBuf == 0x00) {
-    return __bio_write(owner->mSocket->fd, buf, length);
+    return __bio_write(owner->mSocket, buf, length);
   }
 
   if (owner->mSocket->state == _CS_REQ_RECV && !IsEmpty(mBuf)) {
@@ -157,7 +157,7 @@ int __send(socket_function* owner, const char* buf, int length) {
   while (MSGBUF_32K - mBuf->w < length) {  // 缓存区容量 < 客户数据
     memcpy(mBuf->p + mBuf->w, buf + offset, MSGBUF_32K - mBuf->w);
     offset += MSGBUF_32K - mBuf->w;
-    if (__bio_write(owner, mBuf->p + mBuf->r, MSGBUF_32K - mBuf->r) < 0) {
+    if (__bio_write(owner->mSocket, mBuf->p + mBuf->r, MSGBUF_32K - mBuf->r) < 0) {
       return err;
     }
     mBuf->w = 0;
@@ -182,7 +182,7 @@ int __recv(socket_function* owner, const char* buf, int length) {
   }
 
   if (mBuf == 0x00) {
-    return __bio_read(owner->mSocket->fd, buf, length);
+    return __bio_read(owner->mSocket, buf, length);
   }
 
   if (owner->mSocket->state == _CS_REQ_SENT && !IsEmpty(mBuf)) {
@@ -194,7 +194,7 @@ int __recv(socket_function* owner, const char* buf, int length) {
   // 读缓冲数据长度
   if (mBuf->w == 0) {  // 缓冲区已空
   NEXT:
-    if ((err = __bio_read(owner->mSocket->fd, mBuf->p, MSGBUF_32K)) < 0) {
+    if ((err = __bio_read(owner->mSocket, mBuf->p, MSGBUF_32K)) < 0) {
       return err;
     }
   }

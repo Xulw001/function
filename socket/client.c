@@ -1,4 +1,69 @@
+#ifdef _SOCKET_SERVER
+#undef _SOCKET_SERVER
+#endif
 #include "socket.h"
+
+socket_function* initClient(socket_option* opt) {
+  int buf = 0, err = 0;
+  socket_function* fun = 0;
+  socket_base* mSocket = 0;
+  socket_ssl* ssl_st = 0;
+  socket_buff* rw = 0;
+
+  opt->timeout = opt->timeout ? opt->timeout : 30;
+
+  if ((err = __optchk(opt)) < 0) {
+    ERROUT("socket_option", err);
+    return 0;
+  }
+
+  fun = (socket_function*)malloc(sizeof(socket_function));
+  if (fun == 0) {
+    ERROUT("malloc", __errno());
+    return 0;
+  }
+  fun->mSocket = mSocket;
+  fun->connect = __connect;
+  fun->fin = __fin;
+  fun->send = __send;
+  fun->recv = __recv;
+  fun->load_cert_file = __load_cert_file;
+  fun->ssl_connect = __ssl_connect;
+
+  mSocket = (socket_base*)malloc(sizeof(socket_base));
+  if (mSocket == 0) {
+    ERROUT("malloc", __errno());
+    return 0;
+  }
+  mSocket->opt = *opt;
+  mSocket->fd = INVALID_SOCKET;
+  mSocket->state = _CS_IDLE;
+  mSocket->buf = rw;
+  mSocket->ssl_st = ssl_st;
+  mSocket->client = 0x00;
+  mSocket->opt.host = (char*)malloc(strlen(opt->host) + 1);
+  memset(mSocket->opt.host, 0x00, strlen(opt->host) + 1);
+  strcmp(mSocket->opt.host, opt->host);
+
+  ssl_st = (socket_ssl*)malloc(sizeof(socket_ssl));
+  if (ssl_st == 0) {
+    ERROUT("malloc", __errno());
+    return 0;
+  }
+  memset(ssl_st, 0x00, sizeof(socket_ssl));
+
+  if (opt->nag_flg == 2) {
+    rw = (socket_buff*)malloc(sizeof(socket_buff) + MSGBUF_32K);
+    if (rw == 0) {
+      ERROUT("malloc", __errno());
+      return 0;
+    }
+    rw->r = 0;
+    rw->w = -1;
+  }
+
+  return fun;
+}
 
 int __connect(socket_function* owner) {
   int err = 0;
@@ -30,10 +95,7 @@ int __connect(socket_function* owner) {
     hints.ai_family = AF_INET;
   else
     hints.ai_family = AF_UNSPEC;
-  if (opt->udp_flg)
-    hints.ai_socktype = SOCK_DGRAM;
-  else
-    hints.ai_socktype = SOCK_STREAM;
+  hints.ai_socktype = SOCK_STREAM;
 
   if ((err = getaddrinfo(server, chPort, &hints, &pAI)) != 0) {
 #ifdef _WIN32
@@ -95,7 +157,7 @@ int __connect(socket_function* owner) {
   }
 
   if (opt->ssl_flg == 1) {
-    if (owner->mSocket->ssl_st->fds.p_flg == 0) {
+    if (owner->mSocket->ssl_st->p_flg == 0) {
       __load_cert_file(owner, 0, 0, 0, 0);
     }
 
@@ -109,20 +171,20 @@ int __connect(socket_function* owner) {
 int __ssl_connect(socket_function* owner) {
   socket_ssl* ssl_st = owner->mSocket->ssl_st;
 
-  ssl_st->fds.ssl = SSL_new(ssl_st->ctx);
-  if (ssl_st->fds.ssl == NULL) return __sslErr(__FILE__, __LINE__, "SSL_new");
+  ssl_st->ssl = SSL_new(ssl_st->ctx);
+  if (ssl_st->ssl == NULL) return __sslErr(__FILE__, __LINE__, "SSL_new");
 
-  if (!SSL_set_fd(ssl_st->fds.ssl, owner->mSocket->fd))
+  if (!SSL_set_fd(ssl_st->ssl, owner->mSocket->fd))
     return __sslErr(__FILE__, __LINE__, "SSL_set_fd");
 
-  SSL_set_connect_state(ssl_st->fds.ssl);
+  SSL_set_connect_state(ssl_st->ssl);
 
-  SSL_set_tlsext_host_name(ssl_st->fds.ssl, owner->mSocket->opt.host);
+  SSL_set_tlsext_host_name(ssl_st->ssl, owner->mSocket->opt.host);
 
-  if (SSL_connect(ssl_st->fds.ssl) != 1)
+  if (SSL_connect(ssl_st->ssl) != 1)
     return __sslErr(__FILE__, __LINE__, "SSL_connect");
 
-  ssl_st->fds.p_flg = 2;
+  ssl_st->p_flg = 2;
   return 0;
 }
 
@@ -154,16 +216,17 @@ int __send(socket_function* owner, const char* buf, int length) {
     }
   }
   mBuf->w = (mBuf->w == -1) ? 0 : mBuf->w;
-  while (MSGBUF_32K - mBuf->w < length) {  // »º´æÇøÈÝÁ¿ < ¿Í»§Êý¾Ý
+  while (MSGBUF_32K - mBuf->w < length) {  // ç¼“å­˜åŒºå®¹é‡ < å®¢æˆ·æ•°æ®
     memcpy(mBuf->p + mBuf->w, buf + offset, MSGBUF_32K - mBuf->w);
     offset += MSGBUF_32K - mBuf->w;
-    if (__bio_write(owner->mSocket, mBuf->p + mBuf->r, MSGBUF_32K - mBuf->r) < 0) {
+    if (__bio_write(owner->mSocket, mBuf->p + mBuf->r, MSGBUF_32K - mBuf->r) <
+        0) {
       return err;
     }
     mBuf->w = 0;
     mBuf->r = 0;
   }
-  // »º´æÇøÈÝÁ¿ >= ¿Í»§Êý¾Ý
+  // ç¼“å­˜åŒºå®¹é‡ >= å®¢æˆ·æ•°æ®
   memcpy(mBuf->p + mBuf->w, buf + offset, length - offset);
   mBuf->w += length - offset;
 
@@ -191,8 +254,8 @@ int __recv(socket_function* owner, const char* buf, int length) {
     }
   }
 
-  // ¶Á»º³åÊý¾Ý³¤¶È
-  if (mBuf->w == 0) {  // »º³åÇøÒÑ¿Õ
+  // è¯»ç¼“å†²æ•°æ®é•¿åº¦
+  if (mBuf->w == 0) {  // ç¼“å†²åŒºå·²ç©º
   NEXT:
     if ((err = __bio_read(owner->mSocket, mBuf->p, MSGBUF_32K)) < 0) {
       return err;
@@ -200,7 +263,7 @@ int __recv(socket_function* owner, const char* buf, int length) {
   }
 
   mBuf->w = (mBuf->w == -1) ? 0 : mBuf->w;
-  if (mBuf->w - mBuf->r <= length - offset) {  // »º³åÇøÎ´¶ÁÊý¾Ý <= ¿Í»§Çø³¤¶È
+  if (mBuf->w - mBuf->r <= length - offset) {  // ç¼“å†²åŒºæœªè¯»æ•°æ® <= å®¢æˆ·åŒºé•¿åº¦
     memcpy(buf + offset, mBuf->p + mBuf->r, mBuf->w - mBuf->r);
     offset += mBuf->w - mBuf->r;
     if (err != MSGBUF_32K) {
@@ -208,7 +271,7 @@ int __recv(socket_function* owner, const char* buf, int length) {
     } else {
       goto NEXT;
     }
-  } else {  // »º³åÇøÎ´¶ÁÊý¾Ý > ¿Í»§Çø³¤¶È
+  } else {  // ç¼“å†²åŒºæœªè¯»æ•°æ® > å®¢æˆ·åŒºé•¿åº¦
     memcpy(buf + offset, mBuf->p + mBuf->r, length - offset);
     mBuf->r += length - offset;
     return length;

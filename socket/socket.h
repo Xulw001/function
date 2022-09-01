@@ -28,6 +28,10 @@ typedef struct addrinfo ADDRINFOT;
 #define MAX_CONNECT (1024)
 #endif
 
+#ifndef CT_NUM
+#define CT_NUM (8)
+#endif
+
 #ifndef BACKLOG
 #define BACKLOG 10
 #endif
@@ -55,8 +59,8 @@ typedef enum {
 
 typedef enum {
   OPT_FLG = -1,      //
-  OPT_PORT = -2,     // Í¨ÐÅ¶Ë¿ÚÒì³£
-  OPT_HOST = -3,     // Ö÷»úÃûÎ´Ö¸¶¨
+  OPT_PORT = -2,     // é€šä¿¡ç«¯å£å¼‚å¸¸
+  OPT_HOST = -3,     // ä¸»æœºåæœªæŒ‡å®š
   WAS_VER = -4,      //
   STATE_ERR = -5,    //
   CONNECT_ERR = -6,  //
@@ -85,9 +89,9 @@ typedef int (*callback)(SOCKET fd, int nread);
 typedef struct {
   char udp_flg;  // TCP/UDP
   char nio_flg;  // block/noblock
-  char nag_flg;  // 0: Õý³£socket 1: ¹Ø±ÕNagleËã·¨ 2: ×Ô¶¨Òå·¢ËÍ
-  char cls_flg;  // 0: Õý³£socket 1: Çå¿Õ¶Á»º³å
-  char ssl_flg;  // SSL/TLSÍ¨ÐÅ 0: open 1: SSL/TLS/DTLS
+  char nag_flg;  // 0: æ­£å¸¸socket 1: å…³é—­Nagleç®—æ³• 2: è‡ªå®šä¹‰å‘é€
+  char cls_flg;  // 0: æ­£å¸¸socket 1: æ¸…ç©ºè¯»ç¼“å†²
+  char ssl_flg;  // SSL/TLSé€šä¿¡ 0: open 1: SSL/TLS/DTLS
   char aio_flg;  // Win/IOCP Linux/epoll
   char resv[2];
   int timeout;
@@ -95,22 +99,22 @@ typedef struct {
   char* host;
 } socket_option;
 
-struct socket_fd {
-  struct socket_fd* next;
-  SOCKET* cfd;
-};
+typedef struct {
+  SOCKET cfd[MAX_CONNECT];
+} socket_fd;
 
-struct socket_ssl_fd {
-  struct socket_ssl_fd* next;
-  SSL* ssl;
-  char p_flg;  // 0:×¼±¸,1:¾ÍÐ÷,2:Íê³É
-};
+typedef struct {
+  SSL* ssl[MAX_CONNECT];
+  char p_flg[MAX_CONNECT];  // 0:å‡†å¤‡,1:å°±ç»ª,2:å®Œæˆ
+} socket_ssl_fd;
 
 typedef struct {
   SSL_CTX* ctx;
+  SSL* ssl;
   char* key_file;
   char* cert_file;
-  struct socket_ssl_fd fds;
+  socket_ssl_fd* fds;
+  char p_flg;
 } socket_ssl;
 
 typedef struct {
@@ -124,18 +128,27 @@ typedef struct {
   socket_option opt;
   socket_buff* buf;
   socket_ssl* ssl_st;
-  struct socket_fd* client;
+  socket_fd* client;
 } socket_base;
 
 typedef struct {
   socket_base* mSocket;
-  int (*connect)(void*);
-  int (*close)(void*);
   int (*fin)(void*);
   int (*send)(void*, const char*, int);
   int (*recv)(void*, const char*, int);
   int (*load_cert_file)(void*, const char*, const char*, int, int);
+#ifndef _SOCKET_SERVER
+  int (*connect)(void*);
   int (*ssl_connect)(void*);
+#else
+  int (*close)(void*, int*);
+  int (*bind)(void*);
+  int (*listen)(void*);
+  int (*ssl_bind)(void*);
+  int (*ssl_listen)(void*);
+  int (*callback)(SOCKET fd, int nread);
+  int (*callbackstart)(SOCKET fd, PSOCKADDR addrinfo);
+#endif
 } socket_function;
 
 // typedef struct {
@@ -152,17 +165,26 @@ typedef struct {
 //                                    callbackstart start);
 // int finalServer(socket_function_server* fun);
 socket_function* initClient(socket_option* opt);
+socket_function* initServer(socket_option* opt, callback cb,
+                            callbackstart start);
+int final(socket_function* fun);
 int __connect(socket_function* owner);
-int __close(socket_function* owner);
+int __close(socket_function* owner, int idx);
 int __fin(socket_function* owner);
 int __send(socket_function* owner, const char* buf, int size);
 int __recv(socket_function* owner, const char* buf, int size);
 int __load_cert_file(socket_function* owner, const char* key_file,
                      const char* cert_file, int sslV, int filev);
+int __bind(socket_function* owner);
+int __listen(socket_function* owner);
+int __ssl_bind(socket_function* owner);
+int __ssl_listen(socket_function* owner);
 
 #define IsEmpty(buf) ((buf->r == 0) && (buf->w == -1))
 int __open(socket_function* owner);
+int __close0(socket_function* owner, int idx);
 int __ssl_connect(socket_function* owner);
+int __optchk(socket_option* opt);
 int __sslErr(char* file, int line, char* fun);
 int __sslChk(SSL* ssl_st, int ret);
 

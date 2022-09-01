@@ -40,40 +40,36 @@ int __open(socket_function* owner) {
   return 0;
 }
 
-// int final(void* fun) {
-//   int err = 0;
-//   if (fun == NULL) {
-//     return 0;
-//   }
+int final(socket_function* fun) {
+  int err = 0;
+  if (fun == NULL) {
+    return 0;
+  }
 
-//   if ((err = ((socket_function*)fun)->close(fun)) != 0) {
-//     return err;
-//   }
+  if (fun->mSocket == 0) {
+    free(fun);
+    return 0;
+  }
 
-//   if (((socket_function*)fun)->mSocket == 0) {
-//     return 0;
-//   }
+  if ((err = __close(fun, 0)) != 0) {
+    return err;
+  }
 
-//   if (((socket_function*)fun)->mSocket->r_buf != NULL) {
-//     free(((socket_function*)fun)->mSocket->r_buf);
-//     ((socket_function*)fun)->mSocket->r_buf = NULL;
-//   }
+  if (fun->mSocket->buf != NULL) {
+    free(fun->mSocket->buf);
+    fun->mSocket->buf = NULL;
+  }
 
-//   if (((socket_function*)fun)->mSocket->w_buf != NULL) {
-//     free(((socket_function*)fun)->mSocket->w_buf);
-//     ((socket_function*)fun)->mSocket->w_buf = NULL;
-//   }
+  if (fun->mSocket->opt.host != NULL) {
+    free(fun->mSocket->opt.host);
+    fun->mSocket->opt.host = NULL;
+  }
 
-//   if (((socket_function*)fun)->mSocket->opt.host != NULL) {
-//     free(((socket_function*)fun)->mSocket->opt.host);
-//     ((socket_function*)fun)->mSocket->opt.host = NULL;
-//   }
+  free(fun->mSocket);
+  fun->mSocket = NULL;
 
-//   free(((socket_function*)fun)->mSocket);
-//   ((socket_function*)fun)->mSocket = NULL;
-
-//   free(fun);
-// }
+  return 0;
+}
 
 int __sslErr(char* file, int line, char* fun) {
   unsigned long ulErr = 0;
@@ -108,7 +104,6 @@ int __sslChk(SSL* ssl, int ret) {
 
 int __load_cert_file(socket_function* owner, const char* key_file,
                      const char* cert_file, int sslV, int filev) {
-  const SSL_METHOD* meth;
   const SSL_METHOD* meth;
   socket_ssl* ssl_st = owner->mSocket->ssl_st;
 #ifdef _WIN32
@@ -214,72 +209,9 @@ int __load_cert_file(socket_function* owner, const char* key_file,
         ssl_st->ctx, SSL_SESS_CACHE_CLIENT | SSL_SESS_CACHE_NO_INTERNAL_STORE);
   }
 
-  ssl_st->fds.p_flg = 1;
+  ssl_st->p_flg = 1;
 
   return 0;
-}
-
-socket_function* initClient(socket_option* opt) {
-  int buf = 0, err = 0;
-  socket_function* fun = 0;
-  socket_base* mSocket = 0;
-  socket_ssl* ssl_st = 0;
-  socket_buff* rw = 0;
-
-  opt->timeout = opt->timeout ? opt->timeout : 30;
-
-  if ((err = __optchk(opt)) < 0) {
-    ERROUT("socket_option", err);
-    return 0;
-  }
-
-  fun = (socket_function*)malloc(sizeof(socket_function));
-  if (fun == 0) {
-    ERROUT("malloc", __errno());
-    return 0;
-  }
-  fun->mSocket = mSocket;
-  fun->connect = __connect;
-  fun->close = __close;
-  fun->fin = __fin;
-  fun->send = __send;
-  fun->recv = __recv;
-  fun->load_cert_file = __load_cert_file;
-  fun->ssl_connect = __ssl_connect;
-
-  mSocket = (socket_base*)malloc(sizeof(socket_base));
-  if (mSocket == 0) {
-    ERROUT("malloc", __errno());
-    return 0;
-  }
-  mSocket->opt = *opt;
-  mSocket->fd = INVALID_SOCKET;
-  mSocket->state = _CS_IDLE;
-  mSocket->buf = rw;
-  mSocket->ssl_st = ssl_st;
-  mSocket->client = 0x00;
-  mSocket->opt.host = (char*)malloc(strlen(opt->host) + 1);
-  memset(mSocket->opt.host, 0x00, strlen(opt->host) + 1);
-  strcmp(mSocket->opt.host, opt->host);
-
-  ssl_st = (socket_ssl*)malloc(sizeof(socket_ssl));
-  if (ssl_st == 0) {
-    ERROUT("malloc", __errno());
-    return 0;
-  }
-  memset(ssl_st, 0x00, sizeof(socket_ssl));
-
-  if (opt->nag_flg == 2) {
-    rw = (socket_buff*)malloc(sizeof(socket_buff) + MSGBUF_32K);
-    if (rw == 0) {
-      ERROUT("malloc", __errno());
-      return 0;
-    }
-    rw->r = 0;
-    rw->w = -1;
-  }
-
-  return fun;
 }
 
 int __fin(socket_function* owner) {
@@ -289,13 +221,12 @@ int __fin(socket_function* owner) {
   buff = owner->mSocket->buf;
   switch (owner->mSocket->state) {
     case _CS_REQ_SENT:
-      if (__bio_write(owner->mSocket, buff + buff->r, buff->w - buff->r) <
-          0) {
+      if (__bio_write(owner->mSocket, buff->p + buff->r, buff->w - buff->r) < 0) {
         return err;
       }
       break;
     case _CS_REQ_RECV:
-      while ((rtv = __bio_read(owner->mSocket, buff, MSGBUF_32K)) != 0) {
+      while ((rtv = __bio_read(owner->mSocket, buff->p, MSGBUF_32K)) != 0) {
         if (rtv < 0) {
           return err;
         } else if (rtv < MSGBUF_32K) {
@@ -309,25 +240,83 @@ int __fin(socket_function* owner) {
   return 0;
 }
 
-// int __close0(socket_function* owner) {
-//   if (owner->mSocket->state != _CS_REQ_STARTED) {
-//     ERROUT("close", STATE_ERR);
-//     return STATE_ERR;
-//   }
+int __close(socket_function* owner, int idx) {
+  int i, j;
+  if (idx == 0) {
+    return __close0(owner, 0);
+  }
+  idx--;
+  i = idx / MAX_CONNECT;
+  j = idx % MAX_CONNECT;
+  if (owner->mSocket->ssl_st->fds != NULL) {
+    if (owner->mSocket->ssl_st->fds[i].ssl[j]) {
+      SSL_free(owner->mSocket->ssl_st->fds[i].ssl[j]);
+      owner->mSocket->ssl_st->fds[i].ssl[j] = 0x00;
+    }
+  }
 
-//   if (owner->mSocket->ssl_st->ssl != NULL)
-//     SSL_free(owner->mSocket->ssl_st->ssl);
-//   if (owner->mSocket->ssl_st->ctx != NULL)
-//     SSL_CTX_free(owner->mSocket->ssl_st->ctx);
+  if (owner->mSocket->client != NULL) {
+    if (owner->mSocket->client[i].cfd[j]) {
+#ifndef _WIN32
+      ::close(owner->mSocket->client[i].cfd[j]);
+#else
+      closesocket(owner->mSocket->client[i].cfd[j]);
+#endif
+      owner->mSocket->client[i].cfd[j] = INVALID_SOCKET;
+    }
+  }
 
-//   if (owner->mSocket->fd != INVALID_SOCKET) {
-// #ifndef _WIN32
-//     ::close(owner->mSocket->fd);
-// #else
-//     closesocket(owner->mSocket->fd);
-//     WSACleanup();
-// #endif
-//   }
-//   owner->mSocket->state = _CS_IDLE;
-//   return 0;
-// }
+  return 0;
+}
+
+int __close0(socket_function* owner, int idx) {
+  if (owner->mSocket->state != _CS_REQ_STARTED) {
+    ERROUT("close", STATE_ERR);
+    return STATE_ERR;
+  }
+
+  if (owner->mSocket->ssl_st->ssl != NULL) {
+    SSL_free(owner->mSocket->ssl_st->ssl);
+    owner->mSocket->ssl_st->ssl = 0;
+
+    socket_ssl_fd* fd = owner->mSocket->ssl_st->fds;
+    for (int i = 0; i < CT_NUM; i++) {
+      for (int k = 0; k < MAX_CONNECT; k++) {
+        if (fd[i].ssl[k]) {
+          SSL_free(fd[i].ssl[k]);
+          fd[i].ssl[k] = 0x00;
+        }
+      };
+    }
+  }
+
+  if (owner->mSocket->ssl_st->ctx != NULL)
+    SSL_CTX_free(owner->mSocket->ssl_st->ctx);
+
+  socket_fd* pfd = owner->mSocket->client;
+  for (int i = 0; i < CT_NUM; i++) {
+    for (int k = 0; k < MAX_CONNECT; k++) {
+      if (pfd[i].cfd[k]) {
+#ifndef _WIN32
+        ::close(pfd[i].cfd[k]);
+#else
+        closesocket(pfd[i].cfd[k]);
+#endif
+        pfd[i].cfd[k] = INVALID_SOCKET;
+      }
+    }
+  }
+  owner->mSocket->client = 0x00;
+
+  if (owner->mSocket->fd != INVALID_SOCKET) {
+#ifndef _WIN32
+    ::close(owner->mSocket->fd);
+#else
+    closesocket(owner->mSocket->fd);
+    WSACleanup();
+#endif
+    owner->mSocket->fd = INVALID_SOCKET;
+  }
+  owner->mSocket->state = _CS_IDLE;
+  return 0;
+}

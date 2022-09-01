@@ -216,7 +216,7 @@ int __send(socket_function* owner, const char* buf, int length) {
     }
   }
   mBuf->w = (mBuf->w == -1) ? 0 : mBuf->w;
-  while (MSGBUF_32K - mBuf->w < length) {  // ç¼“å­˜åŒºå®¹é‡ < å®¢æˆ·æ•°æ®
+  while (MSGBUF_32K - mBuf->w < length) {  // »º´æÇøÈÝÁ¿ < ¿Í»§Êý¾Ý
     memcpy(mBuf->p + mBuf->w, buf + offset, MSGBUF_32K - mBuf->w);
     offset += MSGBUF_32K - mBuf->w;
     if (__bio_write(owner->mSocket, mBuf->p + mBuf->r, MSGBUF_32K - mBuf->r) <
@@ -226,7 +226,7 @@ int __send(socket_function* owner, const char* buf, int length) {
     mBuf->w = 0;
     mBuf->r = 0;
   }
-  // ç¼“å­˜åŒºå®¹é‡ >= å®¢æˆ·æ•°æ®
+  // »º´æÇøÈÝÁ¿ >= ¿Í»§Êý¾Ý
   memcpy(mBuf->p + mBuf->w, buf + offset, length - offset);
   mBuf->w += length - offset;
 
@@ -254,8 +254,8 @@ int __recv(socket_function* owner, const char* buf, int length) {
     }
   }
 
-  // è¯»ç¼“å†²æ•°æ®é•¿åº¦
-  if (mBuf->w == 0) {  // ç¼“å†²åŒºå·²ç©º
+  // ¶Á»º³åÊý¾Ý³¤¶È
+  if (mBuf->w == 0) {  // »º³åÇøÒÑ¿Õ
   NEXT:
     if ((err = __bio_read(owner->mSocket, mBuf->p, MSGBUF_32K)) < 0) {
       return err;
@@ -263,7 +263,7 @@ int __recv(socket_function* owner, const char* buf, int length) {
   }
 
   mBuf->w = (mBuf->w == -1) ? 0 : mBuf->w;
-  if (mBuf->w - mBuf->r <= length - offset) {  // ç¼“å†²åŒºæœªè¯»æ•°æ® <= å®¢æˆ·åŒºé•¿åº¦
+  if (mBuf->w - mBuf->r <= length - offset) {  // »º³åÇøÎ´¶ÁÊý¾Ý <= ¿Í»§Çø³¤¶È
     memcpy(buf + offset, mBuf->p + mBuf->r, mBuf->w - mBuf->r);
     offset += mBuf->w - mBuf->r;
     if (err != MSGBUF_32K) {
@@ -271,7 +271,7 @@ int __recv(socket_function* owner, const char* buf, int length) {
     } else {
       goto NEXT;
     }
-  } else {  // ç¼“å†²åŒºæœªè¯»æ•°æ® > å®¢æˆ·åŒºé•¿åº¦
+  } else {  // »º³åÇøÎ´¶ÁÊý¾Ý > ¿Í»§Çø³¤¶È
     memcpy(buf + offset, mBuf->p + mBuf->r, length - offset);
     mBuf->r += length - offset;
     return length;

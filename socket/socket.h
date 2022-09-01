@@ -59,11 +59,12 @@ typedef enum {
 
 typedef enum {
   OPT_FLG = -1,      //
-  OPT_PORT = -2,     // é€šä¿¡ç«¯å£å¼‚å¸¸
-  OPT_HOST = -3,     // ä¸»æœºåæœªæŒ‡å®š
+  OPT_PORT = -2,     // Í¨ÐÅ¶Ë¿ÚÒì³£
+  OPT_HOST = -3,     // Ö÷»úÃûÎ´Ö¸¶¨
   WAS_VER = -4,      //
   STATE_ERR = -5,    //
   CONNECT_ERR = -6,  //
+  BIND_ERR = -7,  //
 } InterError;
 
 typedef enum {
@@ -89,9 +90,9 @@ typedef int (*callback)(SOCKET fd, int nread);
 typedef struct {
   char udp_flg;  // TCP/UDP
   char nio_flg;  // block/noblock
-  char nag_flg;  // 0: æ­£å¸¸socket 1: å…³é—­Nagleç®—æ³• 2: è‡ªå®šä¹‰å‘é€
-  char cls_flg;  // 0: æ­£å¸¸socket 1: æ¸…ç©ºè¯»ç¼“å†²
-  char ssl_flg;  // SSL/TLSé€šä¿¡ 0: open 1: SSL/TLS/DTLS
+  char nag_flg;  // 0: Õý³£socket 1: ¹Ø±ÕNagleËã·¨ 2: ×Ô¶¨Òå·¢ËÍ
+  char cls_flg;  // 0: Õý³£socket 1: Çå¿Õ¶Á»º³å
+  char ssl_flg;  // SSL/TLSÍ¨ÐÅ 0: open 1: SSL/TLS/DTLS
   char aio_flg;  // Win/IOCP Linux/epoll
   char resv[2];
   int timeout;
@@ -105,7 +106,7 @@ typedef struct {
 
 typedef struct {
   SSL* ssl[MAX_CONNECT];
-  char p_flg[MAX_CONNECT];  // 0:å‡†å¤‡,1:å°±ç»ª,2:å®Œæˆ
+  char p_flg[MAX_CONNECT];  // 0:×¼±¸,1:¾ÍÐ÷,2:Íê³É
 } socket_ssl_fd;
 
 typedef struct {
@@ -142,9 +143,7 @@ typedef struct {
   int (*ssl_connect)(void*);
 #else
   int (*close)(void*, int*);
-  int (*bind)(void*);
   int (*listen)(void*);
-  int (*ssl_bind)(void*);
   int (*ssl_listen)(void*);
   int (*callback)(SOCKET fd, int nread);
   int (*callbackstart)(SOCKET fd, PSOCKADDR addrinfo);
@@ -176,8 +175,8 @@ int __recv(socket_function* owner, const char* buf, int size);
 int __load_cert_file(socket_function* owner, const char* key_file,
                      const char* cert_file, int sslV, int filev);
 int __bind(socket_function* owner);
-int __listen(socket_function* owner);
-int __ssl_bind(socket_function* owner);
+int __bio_listen(socket_function* owner);
+int __ssl_bind(socket_function* owner, int idx);
 int __ssl_listen(socket_function* owner);
 
 #define IsEmpty(buf) ((buf->r == 0) && (buf->w == -1))

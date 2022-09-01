@@ -28,10 +28,10 @@ int __bio_write(socket_base* socket, const char* buf, int length) {
     }
 
     if (FD_ISSET(socket->fd, &fds)) {
-      if (socket->opt.ssl_flg != 0 && socket->ssl_st->fds.p_flg == 2) {
-        size = SSL_write(socket->ssl_st->fds.ssl, buf + totalSize,
+      if (socket->opt.ssl_flg != 0 && socket->ssl_st->p_flg == 2) {
+        size = SSL_write(socket->ssl_st->ssl, buf + totalSize,
                          length - totalSize);
-        switch (__sslChk(socket->ssl_st->fds.ssl, size)) {
+        switch (__sslChk(socket->ssl_st->ssl, size)) {
           case -1:
             ERROUT("SSL_write", errno);
             return -1;
@@ -85,10 +85,10 @@ int __bio_read(socket_base* socket, const char* buf, int length) {
     }
 
     if (FD_ISSET(socket->fd, &fds)) {
-      if (socket->opt.ssl_flg != 0 && socket->ssl_st->fds.p_flg == 2) {
-        size = SSL_read(socket->ssl_st->fds.ssl, mBuf->p + totalSize,
+      if (socket->opt.ssl_flg != 0 && socket->ssl_st->p_flg == 2) {
+        size = SSL_read(socket->ssl_st->ssl, mBuf->p + totalSize,
                         length - totalSize);
-        switch (__sslChk(socket->ssl_st->fds.ssl, size)) {
+        switch (__sslChk(socket->ssl_st->ssl, size)) {
           case -1:
             ERROUT("SSL_read", errno);
             return -1;

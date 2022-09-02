@@ -221,7 +221,8 @@ int __fin(socket_function* owner) {
   buff = owner->mSocket->buf;
   switch (owner->mSocket->state) {
     case _CS_REQ_SENT:
-      if (__bio_write(owner->mSocket, buff->p + buff->r, buff->w - buff->r) < 0) {
+      if (__bio_write(owner->mSocket, buff->p + buff->r, buff->w - buff->r) <
+          0) {
         return err;
       }
       break;
@@ -295,6 +296,7 @@ int __close0(socket_function* owner, int idx) {
 
   socket_fd* pfd = owner->mSocket->client;
   for (int i = 0; i < CT_NUM; i++) {
+    if (pfd->use == 0) continue;
     for (int k = 0; k < MAX_CONNECT; k++) {
       if (pfd[i].cfd[k]) {
 #ifndef _WIN32

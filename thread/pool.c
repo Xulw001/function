@@ -4,8 +4,6 @@
 #include <string.h>
 #ifndef _WIN32
 #include <unistd.h>
-#else
-#include <process.h>
 #endif
 #ifdef _DEBUG
 #include <stdio.h>
@@ -91,7 +89,7 @@ int createPool(struct thread_pool** pool, int max_thread, int onfull) {
 
   if (max_thread == 0) {
 #ifndef _WIN32
-    max_thread = (sysconf(_SC_NPROCESSORS_ONLN) - 1) * 2;
+    max_thread = (sysconf(_SC_NPROCESSORS_ONLN) - 1);
 #else
     ;
 #endif

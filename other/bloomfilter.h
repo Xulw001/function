@@ -1,6 +1,7 @@
 #pragma once
+#include "../base/common_type.h"
 
-typedef int (*hash)(const char *, int);
+typedef uint (*hash)(const char *, int);
 
 struct bloomfilter {
   uint size;

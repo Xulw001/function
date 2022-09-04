@@ -4,14 +4,16 @@ CXX := g++
 RM := del /s /q
 
 ## Include Dir
-INCLUDE-DIR := $(C_HOME)/include
+INCLUDE-DIR := $(C_HOME)/include D:/source/openssl-openssl-3.0.1/openssl/include
 INCLUDE = $(if $(INCLUDE-DIR),$(addprefix -I,$(INCLUDE-DIR)),)
+
+LIBDIR32 = D:/source/openssl-openssl-3.0.1/openssl/lib
 
 TARGET := Test.exe
 
 TARGET_ARCH = -m32 -fPIC
 LIBDIR = $(addprefix -L,$(LIBDIR32))
-LDLIBS = -lpthread
+LDLIBS = -lpthread -lssl -lcrypto -lwsock32 -lws2_32
 
 ## C Pre Processor Options (Multi-thread)
 CPPFLAGS := -D_REENTRANT -D_MulThread -O2 -D_WIN32_WINNT=0x0600 -D_USE_CAS
@@ -29,7 +31,7 @@ ifeq ($(MAKECMDGOALS), debug)
 	CXXFLAGS += -g -D_DEBUG 
 endif
 
-SRC = $(wildcard allocate/*.c base/*.c thread/*.c algorithm/*.c *.c)
+SRC = $(wildcard allocate/*.c base/*.c thread/*.c algorithm/*.c socket/*.c other/*.c *.c)
 OBJ = $(SRC:.c=.o) $(SRCXX:.cpp=.o)
 
 all : $(TARGET)

@@ -12,7 +12,7 @@ int createBloomFilter(struct bloomfilter **ppbmfilter, int size, int func,
   }
 
   pbmfilter->size = size ? size : 1024;
-  pbmfilter->bits = (byte *)malloc(sizeof(byte) * pbmfilter->size);
+  pbmfilter->bits = (uint *)malloc(sizeof(byte) * pbmfilter->size);
   if (func == 0) {
     pbmfilter->nfun = 8;
     pbmfilter->pfun = (hash *)malloc(sizeof(hash) * 8);

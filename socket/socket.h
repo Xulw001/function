@@ -59,12 +59,12 @@ typedef enum {
 
 typedef enum {
   OPT_FLG = -1,      //
-  OPT_PORT = -2,     // 通信端口异常
-  OPT_HOST = -3,     // 主机名未指定
+  OPT_PORT = -2,     // port exception
+  OPT_HOST = -3,     // hostname exception
   WAS_VER = -4,      //
   STATE_ERR = -5,    //
   CONNECT_ERR = -6,  //
-  BIND_ERR = -7,  //
+  BIND_ERR = -7,     //
 } InterError;
 
 typedef enum {
@@ -90,9 +90,9 @@ typedef int (*callback)(SOCKET fd, int nread);
 typedef struct {
   char udp_flg;  // TCP/UDP
   char nio_flg;  // block/noblock
-  char nag_flg;  // 0: 正常socket 1: 关闭Nagle算法 2: 自定义发送
-  char cls_flg;  // 0: 正常socket 1: 清空读缓冲
-  char ssl_flg;  // SSL/TLS通信 0: open 1: SSL/TLS/DTLS
+  char nag_flg;  // 0: default 1: close Nagle 2: user decide
+  char cls_flg;  // 0: default 1: clean socket buff
+  char ssl_flg;  // SSL/TLS 0: open 1: SSL/TLS/DTLS
   char aio_flg;  // Win/IOCP Linux/epoll
   char resv[2];
   int timeout;
@@ -107,7 +107,7 @@ typedef struct {
 
 typedef struct {
   SSL* ssl[MAX_CONNECT];
-  char p_flg[MAX_CONNECT];  // 0:准备,1:就绪,2:完成
+  char p_flg[MAX_CONNECT];  // 0:prepare 1:ready 2:complete
 } socket_ssl_fd;
 
 typedef struct {
@@ -176,10 +176,8 @@ int __recv(socket_function* owner, const char* buf, int size);
 int __load_cert_file(socket_function* owner, const char* key_file,
                      const char* cert_file, int sslV, int filev);
 int __bind(socket_function* owner);
-int __bio_listen(socket_function* owner);
 int __ssl_bind(socket_function* owner, int idx);
 int __ssl_listen(socket_function* owner);
-int __commucation(int final, void* params);
 
 #define IsEmpty(buf) ((buf->r == 0) && (buf->w == -1))
 int __open(socket_function* owner);
@@ -191,6 +189,13 @@ int __sslChk(SSL* ssl_st, int ret);
 
 int __bio_read(socket_base* socket, const char* buf, int size);
 int __bio_write(socket_base* socket, const char* buf, int size);
+int __bio_listen(socket_function* owner);
+#ifndef _WIN32
+u_int __bio_commucation(void* params);
+#else
+u_int __stdcall __bio_commucation(void* params);
+#endif 
+int __bio_sub_commucation(int* final, void* params);
 
 // int finalClient(socket_function* fun);
 

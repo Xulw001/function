@@ -2,6 +2,7 @@
 #ifndef _WIN32
 #include <pthread.h>
 #else
+#include <process.h>
 #include <windows.h>
 #endif
 #include "sem.h"
@@ -29,18 +30,18 @@ struct thread_pool {
   unsigned int shutdown;     // sign pool shutdown
   unsigned int max_threads;  // max thread num
   unsigned int t_free;       // free thread num
-  unsigned int onfull;  // add task when pool is full  0: return 1??wait empty
+  unsigned int onfull;  // add task when pool is full  0: return 1: wait empty
   struct task *tasks, *end;  // task queue
   thrd_t* threads;           // thread handle
 #ifndef _USE_CAS
   mtx_t lock_ready;
   mtx_t lock_empty;
-  cond_t task_ready;  // 
-  cond_t task_empty;  // 
+  cond_t task_ready;  //
+  cond_t task_empty;  //
 #else
-  unsigned int lock_task;    // lock for task queue
-  HANDLE task_ready;         // sign task ready
-  HANDLE task_empty;         // sign task empty
+  unsigned int lock_task;  // lock for task queue
+  HANDLE task_ready;       // sign task ready
+  HANDLE task_empty;       // sign task empty
 #endif
 };
 

@@ -32,7 +32,7 @@ socket_function* initServer(socket_option* opt, callback cb,
   fun->send = __send;
   fun->recv = __recv;
   fun->load_cert_file = __load_cert_file;
-//  fun->ssl_listen = __ssl_listen;
+  fun->ssl_bind = __ssl_bind;
 
   mSocket = (socket_base*)malloc(sizeof(socket_base));
   if (mSocket == 0) {
@@ -195,7 +195,7 @@ int __bind(socket_function* owner) {
 
 int __ssl_bind(socket_function* owner, int idx) {
   int i, j;
-  SSL* fd;
+  SSL* c_ssl;
   socket_ssl* ssl_st = owner->mSocket->ssl_st;
 
   if (owner->mSocket->opt.ssl_flg == 1) {
@@ -206,20 +206,20 @@ int __ssl_bind(socket_function* owner, int idx) {
   }
 
   if (ssl_st->p_flg != 2) {
-    fd = SSL_new(ssl_st->ctx);
-    if (fd == NULL) return __sslErr(__FILE__, __LINE__, "SSL_new");
+    c_ssl = SSL_new(ssl_st->ctx);
+    if (c_ssl == NULL) return __sslErr(__FILE__, __LINE__, "SSL_new");
 
-    if (!SSL_set_fd(fd, owner->mSocket->fd))
+    if (!SSL_set_fd(c_ssl, owner->mSocket->fd))
       return __sslErr(__FILE__, __LINE__, "SSL_set_fd");
 
-    SSL_set_accept_state(fd);
-    SSL_set_tlsext_host_name(fd, owner->mSocket->opt.host);
+    SSL_set_accept_state(c_ssl);
+    SSL_set_tlsext_host_name(c_ssl, owner->mSocket->opt.host);
 
-    if (SSL_accept(fd) != 1) {
+    if (SSL_accept(c_ssl) != 1) {
       return __sslErr(__FILE__, __LINE__, "SSL_connect");
     }
 
-    ssl_st->ssl = fd;
+    ssl_st->ssl = c_ssl;
 
     ssl_st->p_flg = 2;
   }
@@ -228,20 +228,20 @@ int __ssl_bind(socket_function* owner, int idx) {
     i = idx / MAX_CONNECT;
     j = idx % MAX_CONNECT;
     if (owner->mSocket->client[i].cfd[j] != INVALID_SOCKET) {
-      fd = ssl_st->fds[i].ssl[j] = SSL_new(ssl_st->ctx);
-      if (fd == NULL) return __sslErr(__FILE__, __LINE__, "SSL_new");
+      c_ssl = ssl_st->fds[i].ssl[j] = SSL_new(ssl_st->ctx);
+      if (c_ssl == NULL) return __sslErr(__FILE__, __LINE__, "SSL_new");
 
-      if (!SSL_set_fd(fd, owner->mSocket->client[i].cfd[j]))
+      if (!SSL_set_fd(c_ssl, owner->mSocket->client[i].cfd[j]))
         return __sslErr(__FILE__, __LINE__, "SSL_set_fd");
 
-      SSL_set_accept_state(fd);
-      SSL_set_tlsext_host_name(fd, owner->mSocket->opt.host);
+      SSL_set_accept_state(c_ssl);
+      SSL_set_tlsext_host_name(c_ssl, owner->mSocket->opt.host);
 
-      if (SSL_accept(fd) != 1) {
+      if (SSL_accept(c_ssl) != 1) {
         return __sslErr(__FILE__, __LINE__, "SSL_connect");
       }
 
-      ssl_st->fds[i].ssl[j] = fd;
+      ssl_st->fds[i].ssl[j] = c_ssl;
       ssl_st->fds[i].p_flg[j] = 2;
     }
   }

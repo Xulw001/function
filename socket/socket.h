@@ -86,6 +86,8 @@ typedef enum {
 
 typedef int (*callbackstart)(SOCKET fd, PSOCKADDR addrinfo);
 typedef int (*callback)(SOCKET fd, int nread);
+typedef int (*callbackstartSSL)(SSL* ssl_fd, PSOCKADDR addrinfo);
+typedef int (*callbackSSL)(SSL* ssl_fd, int nread);
 
 typedef struct {
   char udp_flg;  // TCP/UDP
@@ -143,11 +145,13 @@ typedef struct {
   int (*connect)(void*);
   int (*ssl_connect)(void*);
 #else
-  int (*close)(void*, int*);
+  int (*close)(void*, int*, int*);
   int (*listen)(void*);
-  int (*ssl_listen)(void*);
-  int (*callback)(SOCKET fd, int nread);
-  int (*callbackstart)(SOCKET fd, PSOCKADDR addrinfo);
+  int (*ssl_bind)(void*, int);
+  int (*callback)(SOCKET, int);
+  int (*callbackstart)(SOCKET, PSOCKADDR);
+  int (*callbackSSL)(SSL*, int);
+  int (*callbackstartSSL)(SSL*, PSOCKADDR);
 #endif
 } socket_function;
 
@@ -169,7 +173,7 @@ socket_function* initServer(socket_option* opt, callback cb,
                             callbackstart start);
 int final(socket_function* fun);
 int __connect(socket_function* owner);
-int __close(socket_function* owner, int idx);
+int __close(socket_function* owner, int group, int idx);
 int __fin(socket_function* owner);
 int __send(socket_function* owner, const char* buf, int size);
 int __recv(socket_function* owner, const char* buf, int size);
@@ -181,7 +185,7 @@ int __ssl_listen(socket_function* owner);
 
 #define IsEmpty(buf) ((buf->r == 0) && (buf->w == -1))
 int __open(socket_function* owner);
-int __close0(socket_function* owner, int idx);
+int __close0(socket_function* owner);
 int __ssl_connect(socket_function* owner);
 int __optchk(socket_option* opt);
 int __sslErr(char* file, int line, char* fun);
@@ -194,7 +198,7 @@ int __bio_listen(socket_function* owner);
 u_int __bio_commucation(void* params);
 #else
 u_int __stdcall __bio_commucation(void* params);
-#endif 
+#endif
 int __bio_sub_commucation(int* final, void* params);
 
 // int finalClient(socket_function* fun);

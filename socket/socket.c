@@ -51,7 +51,7 @@ int final(socket_function* fun) {
     return 0;
   }
 
-  if ((err = __close(fun, 0)) != 0) {
+  if ((err = __close(fun, -1, 0)) != 0) {
     return err;
   }
 
@@ -241,36 +241,32 @@ int __fin(socket_function* owner) {
   return 0;
 }
 
-int __close(socket_function* owner, int idx) {
-  int i, j;
-  if (idx == 0) {
-    return __close0(owner, 0);
+int __close(socket_function* owner, int group, int idx) {
+  if (group == -1) {
+    return __close0(owner);
   }
-  idx--;
-  i = idx / MAX_CONNECT;
-  j = idx % MAX_CONNECT;
   if (owner->mSocket->ssl_st->fds != NULL) {
-    if (owner->mSocket->ssl_st->fds[i].ssl[j]) {
-      SSL_free(owner->mSocket->ssl_st->fds[i].ssl[j]);
-      owner->mSocket->ssl_st->fds[i].ssl[j] = 0x00;
+    if (owner->mSocket->ssl_st->fds[group].ssl[idx]) {
+      SSL_free(owner->mSocket->ssl_st->fds[group].ssl[idx]);
+      owner->mSocket->ssl_st->fds[group].ssl[idx] = 0x00;
     }
   }
 
   if (owner->mSocket->client != NULL) {
-    if (owner->mSocket->client[i].cfd[j]) {
+    if (owner->mSocket->client[group].cfd[idx]) {
 #ifndef _WIN32
-      ::close(owner->mSocket->client[i].cfd[j]);
+      ::close(owner->mSocket->client[group].cfd[idx]);
 #else
-      closesocket(owner->mSocket->client[i].cfd[j]);
+      closesocket(owner->mSocket->client[group].cfd[idx]);
 #endif
-      owner->mSocket->client[i].cfd[j] = INVALID_SOCKET;
+      owner->mSocket->client[group].cfd[idx] = INVALID_SOCKET;
     }
   }
 
   return 0;
 }
 
-int __close0(socket_function* owner, int idx) {
+int __close0(socket_function* owner) {
   if (owner->mSocket->state != _CS_REQ_STARTED) {
     ERROUT("close", STATE_ERR);
     return STATE_ERR;

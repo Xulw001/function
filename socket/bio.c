@@ -1,9 +1,9 @@
 #ifndef _SOCKET_SERVER
 #define _SOCKET_SERVER
 #endif
-#include "socket.h"
-#include "../thread/pool.h"
 #include "../thread/lock.h"
+#include "../thread/pool.h"
+#include "socket.h"
 
 static unsigned int lock_socket = FREE;
 
@@ -240,7 +240,7 @@ typedef struct {
 u_int __bio_commucation(void* params)
 #else
 u_int __stdcall __bio_commucation(void* params)
-#endif 
+#endif
 {
   int err;
   fd_set fds;
@@ -279,7 +279,7 @@ u_int __stdcall __bio_commucation(void* params)
       continue;
     }
 
-    for (int i = 1; i < MAX_CONNECT; i++) {
+    for (int i = 0; i < MAX_CONNECT; i++) {
       if (mSocket->client[para->group].cfd[i] == INVALID_SOCKET ||
           !FD_ISSET(mSocket->client[para->group].cfd[i], &fds)) {
         continue;
@@ -296,11 +296,7 @@ u_int __stdcall __bio_commucation(void* params)
       }
 
       if (nread == 0) {
-#ifndef _WIN32
-        close(mSocket->client[para->group].cfd[i]);
-#else
-        closesocket(mSocket->client[para->group].cfd[i]);
-#endif
+        __close(para->owner, para->group, i);
         lock(&lock_socket);
         mSocket->client[para->group].cfd[i] = INVALID_SOCKET;
         mSocket->client[para->group].use--;

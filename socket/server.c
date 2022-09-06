@@ -3,9 +3,9 @@
 #endif
 #include "socket.h"
 
-socket_function* initServer(socket_option* opt, callback cb,
-                            callbackstart start) {
+socket_function* initServer(socket_option* opt, callback cb, char* msg) {
   int buf = 0, err = 0;
+  char* _msg = 0;
   socket_function* fun = 0;
   socket_base* mSocket = 0;
   socket_ssl* ssl_st = 0;
@@ -23,31 +23,12 @@ socket_function* initServer(socket_option* opt, callback cb,
     ERROUT("malloc", __errno());
     return 0;
   }
-  fun->mSocket = mSocket;
-  fun->callback = cb;
-  fun->callbackstart = start;
-  fun->listen = __bio_listen;
-  fun->close = __close;
-  fun->fin = __fin;
-  fun->send = __send;
-  fun->recv = __recv;
-  fun->load_cert_file = __load_cert_file;
-  fun->ssl_bind = __ssl_bind;
 
   mSocket = (socket_base*)malloc(sizeof(socket_base));
   if (mSocket == 0) {
     ERROUT("malloc", __errno());
     return 0;
   }
-  mSocket->opt = *opt;
-  mSocket->fd = INVALID_SOCKET;
-  mSocket->state = _CS_IDLE;
-  mSocket->buf = NULL;
-  mSocket->client = fds;
-  mSocket->ssl_st = ssl_st;
-  mSocket->opt.host = (char*)malloc(strlen(opt->host) + 1);
-  memset(mSocket->opt.host, 0x00, strlen(opt->host) + 1);
-  strcmp(mSocket->opt.host, opt->host);
 
   ssl_st = (socket_ssl*)malloc(sizeof(socket_ssl));
   if (ssl_st == 0) {
@@ -64,6 +45,36 @@ socket_function* initServer(socket_option* opt, callback cb,
     return 0;
   }
   memset(ssl_st, 0x00, sizeof(socket_ssl));
+
+  fun->mSocket = mSocket;
+  fun->callback = cb;
+  fun->heloMsg = 0;
+  fun->listen = __bio_listen;
+  fun->close = __close;
+  fun->fin = __fin;
+  fun->send = __send;
+  fun->recv = __recv;
+  fun->ssl_bind = __ssl_bind;
+  fun->load_cert_file = __load_cert_file;
+
+  if (msg != 0) {
+    _msg = (char*)malloc(strlen(msg) + 1);
+    if (_msg == 0) {
+      ERROUT("malloc", __errno());
+      return 0;
+    }
+    strcpy(_msg, msg);
+    fun->heloMsg = _msg;
+  }
+
+  mSocket->opt = *opt;
+  mSocket->fd = INVALID_SOCKET;
+  mSocket->state = _CS_IDLE;
+  mSocket->buf = NULL;
+  mSocket->client = fds;
+  mSocket->ssl_st = ssl_st;
+  mSocket->opt.host = (char*)malloc(strlen(opt->host) + 1);
+  strcpy(mSocket->opt.host, opt->host);
 
   return fun;
 }
@@ -186,15 +197,14 @@ int __bind(socket_function* owner) {
       __load_cert_file(owner, 0, 0, 0, 0);
     }
 
-    if ((err = __ssl_bind(owner, 0)) != 0) return err;
+    if ((err = __ssl_bind(owner, -1, 0)) != 0) return err;
   }
 
   mSocket->state = _CS_LISTEN;
   return 0;
 }
 
-int __ssl_bind(socket_function* owner, int idx) {
-  int i, j;
+int __ssl_bind(socket_function* owner, int group, int idx) {
   SSL* c_ssl;
   socket_ssl* ssl_st = owner->mSocket->ssl_st;
 
@@ -224,14 +234,12 @@ int __ssl_bind(socket_function* owner, int idx) {
     ssl_st->p_flg = 2;
   }
 
-  if (idx-- != 0) {
-    i = idx / MAX_CONNECT;
-    j = idx % MAX_CONNECT;
-    if (owner->mSocket->client[i].cfd[j] != INVALID_SOCKET) {
-      c_ssl = ssl_st->fds[i].ssl[j] = SSL_new(ssl_st->ctx);
+  if (group != -1) {
+    if (owner->mSocket->client[group].cfd[idx] != INVALID_SOCKET) {
+      c_ssl = ssl_st->fds[group].ssl[idx] = SSL_new(ssl_st->ctx);
       if (c_ssl == NULL) return __sslErr(__FILE__, __LINE__, "SSL_new");
 
-      if (!SSL_set_fd(c_ssl, owner->mSocket->client[i].cfd[j]))
+      if (!SSL_set_fd(c_ssl, owner->mSocket->client[group].cfd[idx]))
         return __sslErr(__FILE__, __LINE__, "SSL_set_fd");
 
       SSL_set_accept_state(c_ssl);
@@ -241,8 +249,8 @@ int __ssl_bind(socket_function* owner, int idx) {
         return __sslErr(__FILE__, __LINE__, "SSL_connect");
       }
 
-      ssl_st->fds[i].ssl[j] = c_ssl;
-      ssl_st->fds[i].p_flg[j] = 2;
+      ssl_st->fds[group].ssl[idx] = c_ssl;
+      ssl_st->fds[group].p_flg[idx] = 2;
     }
   }
 

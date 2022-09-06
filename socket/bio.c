@@ -179,19 +179,30 @@ int __bio_listen(socket_function* owner) {
               unlock(&lock_socket);
               sFind = i;
 
-              err = owner->callbackstart(cfd, &cliAddr);
-              if (err < 0) {
-                ERROUT("start", errno);
-                break;
-              }
-
               if (mSocket->opt.ssl_flg != 0) {
-                err = __ssl_bind(owner, j + 1 + MAX_CONNECT * i);
+                err = __ssl_bind(owner, i, j);
                 if (err < 0) {
                   ERROUT("bind", errno);
                 }
+              Retry:
+                err = SSL_write(owner->mSocket->ssl_st->fds[i].ssl[j],
+                                owner->heloMsg, strlen(owner->heloMsg));
+                switch (__sslChk(owner->mSocket->ssl_st->fds[i].ssl[j], err)) {
+                  case -1:
+                    ERROUT("SSL_write", errno);
+                    return -1;
+                  case 1:
+                    goto Retry;
+                  case 0:
+                    break;
+                }
+              } else {
+                err = send(cfd, owner->heloMsg, strlen(owner->heloMsg), 0);
+                if (err < 0) {
+                  ERROUT("send", errno);
+                  return -1;
+                };
               }
-
               break;
             }
           }
@@ -296,6 +307,9 @@ u_int __stdcall __bio_commucation(void* params)
       }
 
       if (nread == 0) {
+        if (mSocket->ssl_st->fds[para->group].p_flg[i] == 2) {
+          ;
+        }
         __close(para->owner, para->group, i);
         lock(&lock_socket);
         mSocket->client[para->group].cfd[i] = INVALID_SOCKET;

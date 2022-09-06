@@ -22,28 +22,12 @@ socket_function* initClient(socket_option* opt) {
     ERROUT("malloc", __errno());
     return 0;
   }
-  fun->mSocket = mSocket;
-  fun->connect = __connect;
-  fun->fin = __fin;
-  fun->send = __send;
-  fun->recv = __recv;
-  fun->load_cert_file = __load_cert_file;
-  fun->ssl_connect = __ssl_connect;
 
   mSocket = (socket_base*)malloc(sizeof(socket_base));
   if (mSocket == 0) {
     ERROUT("malloc", __errno());
     return 0;
   }
-  mSocket->opt = *opt;
-  mSocket->fd = INVALID_SOCKET;
-  mSocket->state = _CS_IDLE;
-  mSocket->buf = rw;
-  mSocket->ssl_st = ssl_st;
-  mSocket->client = 0x00;
-  mSocket->opt.host = (char*)malloc(strlen(opt->host) + 1);
-  memset(mSocket->opt.host, 0x00, strlen(opt->host) + 1);
-  strcmp(mSocket->opt.host, opt->host);
 
   ssl_st = (socket_ssl*)malloc(sizeof(socket_ssl));
   if (ssl_st == 0) {
@@ -61,6 +45,23 @@ socket_function* initClient(socket_option* opt) {
     rw->r = 0;
     rw->w = -1;
   }
+
+  fun->mSocket = mSocket;
+  fun->connect = __connect;
+  fun->fin = __fin;
+  fun->send = __send;
+  fun->recv = __recv;
+  fun->load_cert_file = __load_cert_file;
+  fun->ssl_connect = __ssl_connect;
+
+  mSocket->opt = *opt;
+  mSocket->fd = INVALID_SOCKET;
+  mSocket->state = _CS_IDLE;
+  mSocket->buf = rw;
+  mSocket->ssl_st = ssl_st;
+  mSocket->client = 0x00;
+  mSocket->opt.host = (char*)malloc(strlen(opt->host) + 1);
+  strcmp(mSocket->opt.host, opt->host);
 
   return fun;
 }

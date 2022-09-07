@@ -87,7 +87,7 @@ int __bind(socket_function* owner) {
   ADDRINFOT hints;
   PSOCKADDR pSockAddr;
   socket_base* mSocket = NULL;
-  char server[MAX_PATH];
+  char server[HOSTLEN];
   char chPort[6];
 
   memset(server, 0x00, sizeof(server));
@@ -104,7 +104,7 @@ int __bind(socket_function* owner) {
     return STATE_ERR;
   }
 
-  strncpy(server, opt->host, MAX_PATH);
+  strncpy(server, opt->host, HOSTLEN);
   sprintf(chPort, "%d", opt->port);
 
   if (strcmp(server, "localhost") == 0)
@@ -128,7 +128,7 @@ int __bind(socket_function* owner) {
 #ifdef _WIN32
     ERROUT("socket", WSAGetLastError());
 #else
-    ERROUT("socket", errno());
+    ERROUT("socket", __errno());
 #endif
     return BIND_ERR;
   }
@@ -177,7 +177,7 @@ int __bind(socket_function* owner) {
 #ifdef _WIN32
     ERROUT("bind", WSAGetLastError());
 #else
-    ERROUT("bind", errno());
+    ERROUT("bind", __errno());
 #endif
     return BIND_ERR;
   }
@@ -187,7 +187,7 @@ int __bind(socket_function* owner) {
 #ifdef _WIN32
     ERROUT("listen", WSAGetLastError());
 #else
-    ERROUT("listen", errno());
+    ERROUT("listen", __errno());
 #endif
     return BIND_ERR;
   }

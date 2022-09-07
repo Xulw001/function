@@ -1,19 +1,21 @@
 #pragma once
 #ifdef _WIN32
-#include <openssl/err.h>
-#include <openssl/ossl_typ.h>
-#include <openssl/rand.h>
-#include <openssl/ssl.h>
-#include <openssl/x509.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #else
 #include <errno.h>
 #include <netdb.h>
+#include <netinet/tcp.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
 #endif
+#include <openssl/err.h>
+#include <openssl/ossl_typ.h>
+#include <openssl/rand.h>
+#include <openssl/ssl.h>
+#include <openssl/x509.h>
 #ifdef _DEBUG
 #include <stdio.h>
 #endif
@@ -47,6 +49,8 @@ typedef struct addrinfo ADDRINFOT;
 #endif
 
 #define MSGBUF_32K 1024 * 32
+
+#define HOSTLEN 64
 
 typedef enum {
   _CS_IDLE,
@@ -185,8 +189,8 @@ int __optchk(socket_option* opt);
 int __sslErr(char* file, int line, char* fun);
 int __sslChk(SSL* ssl_st, int ret);
 
-int __bio_read(socket_base* socket, const char* buf, int size);
-int __bio_write(socket_base* socket, const char* buf, int size);
+int __bio_read(socket_base* socket, char* buf, int size);
+int __bio_write(socket_base* socket, char* buf, int size);
 int __bio_listen(socket_function* owner);
 #ifndef _WIN32
 u_int __bio_commucation(void* params);

@@ -198,7 +198,7 @@ int __load_cert_file(socket_function* owner, const char* key_file,
     ssl_st->cert_file = cert_file;
   }
 
-  boolean verifypeer = 0;  // TODO
+  int verifypeer = 0;  // TODO
   SSL_CTX_set_verify(ssl_st->ctx,
                      verifypeer ? SSL_VERIFY_PEER : SSL_VERIFY_NONE, NULL);
 
@@ -255,7 +255,7 @@ int __close(socket_function* owner, int group, int idx) {
   if (owner->mSocket->client != NULL) {
     if (owner->mSocket->client[group].cfd[idx]) {
 #ifndef _WIN32
-      ::close(owner->mSocket->client[group].cfd[idx]);
+      close(owner->mSocket->client[group].cfd[idx]);
 #else
       closesocket(owner->mSocket->client[group].cfd[idx]);
 #endif
@@ -296,7 +296,7 @@ int __close0(socket_function* owner) {
     for (int k = 0; k < MAX_CONNECT; k++) {
       if (pfd[i].cfd[k]) {
 #ifndef _WIN32
-        ::close(pfd[i].cfd[k]);
+        close(pfd[i].cfd[k]);
 #else
         closesocket(pfd[i].cfd[k]);
 #endif
@@ -308,7 +308,7 @@ int __close0(socket_function* owner) {
 
   if (owner->mSocket->fd != INVALID_SOCKET) {
 #ifndef _WIN32
-    ::close(owner->mSocket->fd);
+    close(owner->mSocket->fd);
 #else
     closesocket(owner->mSocket->fd);
     WSACleanup();

@@ -73,7 +73,7 @@ int __connect(socket_function* owner) {
   ADDRINFOT* pAI = NULL;
   ADDRINFOT hints;
   PSOCKADDR pSockAddr;
-  char server[MAX_PATH];
+  char server[HOSTLEN];
   char chPort[6];
 
   memset(server, 0x00, sizeof(server));
@@ -89,7 +89,7 @@ int __connect(socket_function* owner) {
     return STATE_ERR;
   }
 
-  strncpy(server, opt->host, MAX_PATH);
+  strncpy(server, opt->host, HOSTLEN);
   sprintf(chPort, "%d", opt->port);
 
   if (strcmp(server, "localhost") == 0)
@@ -114,7 +114,7 @@ int __connect(socket_function* owner) {
 #ifdef _WIN32
     ERROUT("socket", WSAGetLastError());
 #else
-    ERROUT("socket", errno());
+    ERROUT("socket", __errno());
 #endif
     return CONNECT_ERR;
   }
@@ -152,7 +152,7 @@ int __connect(socket_function* owner) {
 #ifdef _WIN32
     ERROUT("connect", WSAGetLastError());
 #else
-    ERROUT("socket", errno());
+    ERROUT("socket", __errno());
 #endif
     return CONNECT_ERR;
   }

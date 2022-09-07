@@ -7,7 +7,7 @@
 
 static unsigned int lock_socket = FREE;
 
-int __bio_write(socket_base* socket, const char* buf, int length) {
+int __bio_write(socket_base* socket, char* buf, int length) {
   fd_set fds;
   int nfds;
   int totalSize = 0;
@@ -54,7 +54,7 @@ int __bio_write(socket_base* socket, const char* buf, int length) {
   return totalSize;
 }
 
-int __bio_read(socket_base* socket, const char* buf, int length) {
+int __bio_read(socket_base* socket, char* buf, int length) {
   fd_set fds;
   int nfds;
   int totalSize = 0;
@@ -142,7 +142,8 @@ int __bio_listen(socket_function* owner) {
     }
 
     if (FD_ISSET(mSocket->fd, &fds)) {
-      cfd = accept(mSocket->fd, (PSOCKADDR)&cliAddr, sizeof(cliAddr));
+      err = sizeof(cliAddr);
+      cfd = accept(mSocket->fd, (PSOCKADDR)&cliAddr, &err);
       if (cfd < 0) {
         WARNING("accept");
         break;

@@ -10,14 +10,14 @@ static unsigned int lock_socket = FREE;
 int __bio_write(socket_base* socket, const char* buf, int length) {
   fd_set fds;
   int nfds;
-  int size, totalSize = 0;
+  int totalSize = 0;
   struct timeval tvTimeOut;
 
   if (socket->fd == INVALID_SOCKET) {
     return -1;
   }
 
-  while (totalSize < length) {
+  do {
     tvTimeOut.tv_sec = socket->opt.timeout;
     tvTimeOut.tv_usec = 0;
     FD_ZERO(&fds);
@@ -36,28 +36,20 @@ int __bio_write(socket_base* socket, const char* buf, int length) {
 
     if (FD_ISSET(socket->fd, &fds)) {
       if (socket->opt.ssl_flg != 0 && socket->ssl_st->p_flg == 2) {
-        size =
-            SSL_write(socket->ssl_st->ssl, buf + totalSize, length - totalSize);
-        switch (__sslChk(socket->ssl_st->ssl, size)) {
-          case -1:
-            ERROUT("SSL_write", errno);
-            return -1;
-          case 0:
-            totalSize += size;
-            break;
-          case 1:
-            break;
+        totalSize = SSL_write(socket->ssl_st->ssl, buf, length);
+        if (__sslChk(socket->ssl_st->ssl, totalSize) < 0) {
+          ERROUT("SSL_write", errno);
+          return -1;
         }
       } else {
-        size = send(socket->fd, buf + totalSize, length - totalSize, 0);
-        if (size < 0) {
+        totalSize = send(socket->fd, buf, length, 0);
+        if (totalSize < 0) {
           ERROUT("send", errno);
           return -1;
         };
-        totalSize += size;
       }
     }
-  }
+  } while (totalSize == 0);
   socket->state = _CS_REQ_SENT;
   return totalSize;
 }
@@ -65,8 +57,7 @@ int __bio_write(socket_base* socket, const char* buf, int length) {
 int __bio_read(socket_base* socket, const char* buf, int length) {
   fd_set fds;
   int nfds;
-  int totalSize, size;
-  socket_buff* mBuf = 0;
+  int totalSize = 0;
   struct timeval tvTimeOut;
 
   if (socket->fd == INVALID_SOCKET) {
@@ -93,34 +84,23 @@ int __bio_read(socket_base* socket, const char* buf, int length) {
 
     if (FD_ISSET(socket->fd, &fds)) {
       if (socket->opt.ssl_flg != 0 && socket->ssl_st->p_flg == 2) {
-        size = SSL_read(socket->ssl_st->ssl, mBuf->p + totalSize,
-                        length - totalSize);
-        switch (__sslChk(socket->ssl_st->ssl, size)) {
-          case -1:
-            ERROUT("SSL_read", errno);
-            return -1;
-          case 0:
-            totalSize += size;
-            break;
-          case 1:
-            break;
+        totalSize = SSL_read(socket->ssl_st->ssl, buf, length);
+        if (__sslChk(socket->ssl_st->ssl, totalSize) < 0) {
+          ERROUT("SSL_read", errno);
+          return -1;
         }
       } else {
-        size = recv(socket->fd, mBuf->p + totalSize, length - totalSize, 0);
-        if (size < 0) {
-          if (size == EAGAIN) {
-            break;
-          } else {
-            ERROUT("recv", errno);
-            return -1;
-          }
+        totalSize = recv(socket->fd, buf, length, 0);
+        if (totalSize < 0) {
+          ERROUT("recv", errno);
+          return -1;
         }
-        totalSize += size;
       }
     }
-  } while (totalSize <= length);
+  } while (totalSize == 0);
+
   socket->state = _CS_REQ_RECV;
-  return 0;
+  return totalSize;
 }
 
 typedef struct {
@@ -244,7 +224,7 @@ int __bio_listen(socket_function* owner) {
 typedef struct {
   socket_function* owner;
   SOCKET fd;
-  int nread;
+  SSL* ssl;
 } SocketParamter;
 
 #ifndef _WIN32
@@ -262,6 +242,7 @@ u_int __stdcall __bio_commucation(void* params)
   struct thread_pool* pool;
   paramter* para;
   SocketParamter* sockpara;
+  char buf[8];
 
   para = params;
   mSocket = para->owner->mSocket;
@@ -296,31 +277,32 @@ u_int __stdcall __bio_commucation(void* params)
         continue;
       }
 
-#ifndef _WIN32
-      err = ioctl(mSocket->client[para->group].cfd[i], FIONREAD, &nread);
-#else
-      err = ioctlsocket(mSocket->client[para->group].cfd[i], FIONREAD, &nread);
-#endif
-      if (err < 0) {
-        ERROUT("ioctl", errno);
-        continue;
-      }
-
-      if (nread == 0) {
-        if (mSocket->ssl_st->fds[para->group].p_flg[i] == 2) {
-          ;
+      if (mSocket->ssl_st->fds[para->group].p_flg[i] == 2) {
+        err = SSL_peek(mSocket->ssl_st->fds[para->group].ssl[i], buf,
+                       sizeof(buf));
+        if (err == 0 &&
+            __sslChk(mSocket->ssl_st->fds[para->group].ssl[i], err) == 0) {
+          SSL_free(mSocket->ssl_st->fds[para->group].ssl[i]);
+          lock(&lock_socket);
+          mSocket->ssl_st->fds[para->group].ssl[i] = NULL;
+          unlock(&lock_socket);
         }
-        __close(para->owner, para->group, i);
-        lock(&lock_socket);
-        mSocket->client[para->group].cfd[i] = INVALID_SOCKET;
-        mSocket->client[para->group].use--;
-        unlock(&lock_socket);
-        continue;
+      } else {
+        err = recv(mSocket->client[para->group].cfd[i], buf, sizeof(buf),
+                   MSG_PEEK);
+        if (err == 0) {
+          __close(para->owner, para->group, i);
+          lock(&lock_socket);
+          mSocket->client[para->group].cfd[i] = INVALID_SOCKET;
+          mSocket->client[para->group].use--;
+          unlock(&lock_socket);
+          continue;
+        }
       }
 
       sockpara = (SocketParamter*)malloc(sizeof(SocketParamter));
       sockpara->fd = mSocket->client[para->group].cfd[i];
-      sockpara->nread = nread;
+      sockpara->ssl = mSocket->ssl_st->fds[para->group].ssl[i];
       sockpara->owner = para->owner;
       err = addTaskPool(pool, __bio_sub_commucation, sockpara, 0);
       if (err < 0) {
@@ -335,7 +317,7 @@ u_int __stdcall __bio_commucation(void* params)
 int __bio_sub_commucation(int* final, void* params) {
   SocketParamter* para;
   para = params;
-  para->owner->callback(para->fd, para->nread);
+  para->owner->callback(para->fd, para->ssl);
   free(params);
   return 0;
 }

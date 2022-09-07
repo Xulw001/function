@@ -89,14 +89,14 @@ int __sslErr(char* file, int line, char* fun) {
 
 int __sslChk(SSL* ssl, int ret) {
   switch (SSL_get_error(ssl, ret)) {
-    case SSL_ERROR_NONE:  // ok
+    case SSL_ERROR_NONE:         // ok
+    case SSL_ERROR_ZERO_RETURN:  // close
       return 0;
     case SSL_ERROR_WANT_READ:     // read again
     case SSL_ERROR_WANT_WRITE:    // write again
     case SSL_ERROR_WANT_ACCEPT:   // accept again
     case SSL_ERROR_WANT_CONNECT:  // connect again
       return 1;
-    case SSL_ERROR_ZERO_RETURN:  // close
     default:
       return -1;
   }

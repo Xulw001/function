@@ -91,7 +91,10 @@ int createPool(struct thread_pool** pool, int max_thread, int onfull) {
 #ifndef _WIN32
     max_thread = (sysconf(_SC_NPROCESSORS_ONLN) - 1);
 #else
-    ;
+    SYSTEM_INFO si;
+    memset(&si, 0, sizeof(SYSTEM_INFO));
+    GetSystemInfo(&si);
+    max_thread = si.dwNumberOfProcessors - 1;
 #endif
   }
 

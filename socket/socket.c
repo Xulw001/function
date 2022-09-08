@@ -269,9 +269,9 @@ int __close(socket_function* owner, int group, int idx) {
 }
 
 int __close0(socket_function* owner) {
-  if (owner->mSocket->state != _CS_REQ_STARTED) {
-    ERROUT("close", STATE_ERR);
-    return STATE_ERR;
+  if (owner->mSocket->state == _CS_IDLE) {
+    WARNING("close when not connect");
+    return 0;
   }
 
   if (owner->mSocket->ssl_st->ssl != NULL) {

@@ -2,17 +2,24 @@
 #include "socket/socket.h"
 
 int handle(SOCKET fd, SSL *ssl) {
+  int err;
   char buf[1024] = {0};
 
   while (1) {
-    recv(fd, buf, 1024, 0);
-    send(fd, buf, 1024, 0);
+    err = recv(fd, buf, 1024, 0);
+    if (err < 0) {
+      continue;
+    }
+    err = send(fd, buf, 1024, 0);
+    if (err < 0) {
+      continue;
+    }
   }
 }
 
 void server() {
   socket_option opt = {
-      0, 0, 0, 0, 0, 0, 0, 0, 10, 65000, "localhost",
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 65000, "localhost",
   };
 
   char *msg = "hello, client!";

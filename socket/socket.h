@@ -58,7 +58,6 @@ typedef enum {
   _CS_REQ_SENT,
   _CS_REQ_RECV,
   _CS_LISTEN,
-  _CS_BADEND
 } State;
 
 typedef enum {

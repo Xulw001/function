@@ -35,7 +35,7 @@ int __bio_write(socket_base* socket, char* buf, int length) {
     }
 
     if (FD_ISSET(socket->fd, &fds)) {
-      if (socket->opt.ssl_flg != 0 && socket->ssl_st->p_flg == 2) {
+      if (socket->ssl_st->p_flg == 2) {
         totalSize = SSL_write(socket->ssl_st->ssl, buf, length);
         if (__sslChk(socket->ssl_st->ssl, totalSize) < 0) {
           ERROUT("SSL_write", errno);
@@ -83,7 +83,7 @@ int __bio_read(socket_base* socket, char* buf, int length) {
     }
 
     if (FD_ISSET(socket->fd, &fds)) {
-      if (socket->opt.ssl_flg != 0 && socket->ssl_st->p_flg == 2) {
+      if (socket->ssl_st->p_flg == 2) {
         totalSize = SSL_read(socket->ssl_st->ssl, buf, length);
         if (__sslChk(socket->ssl_st->ssl, totalSize) < 0) {
           ERROUT("SSL_read", errno);
@@ -98,7 +98,6 @@ int __bio_read(socket_base* socket, char* buf, int length) {
       }
     }
   } while (totalSize == 0);
-
   socket->state = _CS_REQ_RECV;
   return totalSize;
 }
@@ -118,7 +117,7 @@ int __bio_listen(socket_function* owner) {
   socket_base* mSocket = 0;
   struct timeval tvTimeOut;
   paramter para[CT_NUM];
-  thrd_t threads[CT_NUM];
+  thrd_t threads[CT_NUM] = {0};
 
   mSocket = owner->mSocket;
 
@@ -164,6 +163,7 @@ int __bio_listen(socket_function* owner) {
                 err = __ssl_bind(owner, i, j);
                 if (err < 0) {
                   ERROUT("bind", errno);
+                  goto Find;
                 }
               Retry:
                 err = SSL_write(owner->mSocket->ssl_st->fds[i].ssl[j],
@@ -175,7 +175,7 @@ int __bio_listen(socket_function* owner) {
                   case 1:
                     goto Retry;
                   case 0:
-                    break;
+                    goto Find;
                 }
               } else {
                 err = send(cfd, owner->heloMsg, strlen(owner->heloMsg), 0);
@@ -184,12 +184,12 @@ int __bio_listen(socket_function* owner) {
                   return -1;
                 };
               }
-              break;
+              goto Find;
             }
           }
         }
       }
-
+    Find:
       if (sFind == -1) {
         WARNING("accept when socket queue is full");
 #ifndef _WIN32
@@ -200,7 +200,7 @@ int __bio_listen(socket_function* owner) {
         continue;
       }
 
-      if (threads[sFind] != 0) {
+      if (threads[sFind] == 0) {
         para[sFind].group = sFind;
         para[sFind].owner = owner;
         para[sFind].final = 0;
@@ -254,13 +254,16 @@ u_int __stdcall __bio_commucation(void* params)
   }
 
   while (!para->final) {
+    if (mSocket->client[para->group].use == 0) continue;
     tvTimeOut.tv_sec = 0;
     tvTimeOut.tv_usec = mSocket->opt.timeout;
     FD_ZERO(&fds);
     for (int i = 0; i < MAX_CONNECT; i++) {
-      FD_SET(mSocket->client[para->group].cfd[i], &fds);
-      if (mSocket->client[para->group].cfd[i] > max_fd) {
-        max_fd = mSocket->client[para->group].cfd[i];
+      if (mSocket->client[para->group].cfd[i] != INVALID_SOCKET) {
+        FD_SET(mSocket->client[para->group].cfd[i], &fds);
+        if (mSocket->client[para->group].cfd[i] > max_fd) {
+          max_fd = mSocket->client[para->group].cfd[i];
+        }
       }
     }
 
@@ -268,7 +271,7 @@ u_int __stdcall __bio_commucation(void* params)
     if (nfds == 0) {
       continue;
     } else if (nfds < 0) {
-      WARNING("select");
+      ERROUT("select", __errno());
       continue;
     }
 
@@ -278,7 +281,8 @@ u_int __stdcall __bio_commucation(void* params)
         continue;
       }
 
-      if (mSocket->ssl_st->fds[para->group].p_flg[i] == 2) {
+      if (mSocket->ssl_st->p_flg == 1 &&
+          mSocket->ssl_st->fds[para->group].p_flg[i] == 2) {
         err = SSL_peek(mSocket->ssl_st->fds[para->group].ssl[i], buf,
                        sizeof(buf));
         if (err == 0 &&
@@ -292,18 +296,23 @@ u_int __stdcall __bio_commucation(void* params)
         err = recv(mSocket->client[para->group].cfd[i], buf, sizeof(buf),
                    MSG_PEEK);
         if (err == 0) {
+        Close:
           __close(para->owner, para->group, i);
           lock(&lock_socket);
           mSocket->client[para->group].cfd[i] = INVALID_SOCKET;
           mSocket->client[para->group].use--;
           unlock(&lock_socket);
           continue;
+        } else if (err < 0) {
+          if (__errno() == WSAECONNRESET) goto Close;
+          ERROUT("recv", __errno());
         }
       }
 
       sockpara = (SocketParamter*)malloc(sizeof(SocketParamter));
       sockpara->fd = mSocket->client[para->group].cfd[i];
-      sockpara->ssl = mSocket->ssl_st->fds[para->group].ssl[i];
+      sockpara->ssl =
+          mSocket->ssl_st->fds ? mSocket->ssl_st->fds[para->group].ssl[i] : 0;
       sockpara->owner = para->owner;
       err = addTaskPool(pool, __bio_sub_commucation, sockpara, 0);
       if (err < 0) {

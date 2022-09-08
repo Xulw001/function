@@ -194,8 +194,8 @@ int __send(socket_function* owner, const char* buf, int length) {
   socket_buff* mBuf = 0;
 
   mBuf = owner->mSocket->buf;
-  if (owner->mSocket->state != _CS_REQ_STARTED ||
-      owner->mSocket->state != _CS_REQ_SENT ||
+  if (owner->mSocket->state != _CS_REQ_STARTED &&
+      owner->mSocket->state != _CS_REQ_SENT &&
       owner->mSocket->state != _CS_REQ_RECV) {
     ERROUT("send state", owner->mSocket->state);
     return STATE_ERR;
@@ -217,7 +217,7 @@ int __send(socket_function* owner, const char* buf, int length) {
     }
   }
   mBuf->w = (mBuf->w == -1) ? 0 : mBuf->w;
-  while (MSGBUF_32K - mBuf->w < length) {  // 缓存区容量 < 客户数据
+  while (MSGBUF_32K - mBuf->w < length) {  // buff size < data len
     memcpy(mBuf->p + mBuf->w, buf + offset, MSGBUF_32K - mBuf->w);
     offset += MSGBUF_32K - mBuf->w;
     if (__bio_write(owner->mSocket, mBuf->p + mBuf->r, MSGBUF_32K - mBuf->r) <
@@ -227,7 +227,7 @@ int __send(socket_function* owner, const char* buf, int length) {
     mBuf->w = 0;
     mBuf->r = 0;
   }
-  // 缓存区容量 >= 客户数据
+  // buff size >= data len
   memcpy(mBuf->p + mBuf->w, buf + offset, length - offset);
   mBuf->w += length - offset;
 
@@ -239,7 +239,8 @@ int __recv(socket_function* owner, const char* buf, int length) {
   socket_buff* mBuf = 0;
 
   mBuf = owner->mSocket->buf;
-  if (owner->mSocket->state != _CS_REQ_SENT ||
+  if (owner->mSocket->state != _CS_REQ_STARTED &&
+      owner->mSocket->state != _CS_REQ_SENT &&
       owner->mSocket->state != _CS_REQ_RECV) {
     ERROUT("recv", STATE_ERR);
     return STATE_ERR;
@@ -255,8 +256,8 @@ int __recv(socket_function* owner, const char* buf, int length) {
     }
   }
 
-  // 读缓冲数据长度
-  if (mBuf->w == 0) {  // 缓冲区已空
+  // 
+  if (mBuf->w == 0) {  // buff empty
   NEXT:
     if ((err = __bio_read(owner->mSocket, mBuf->p, MSGBUF_32K)) < 0) {
       return err;
@@ -264,7 +265,7 @@ int __recv(socket_function* owner, const char* buf, int length) {
   }
 
   mBuf->w = (mBuf->w == -1) ? 0 : mBuf->w;
-  if (mBuf->w - mBuf->r <= length - offset) {  // 缓冲区未读数据 <= 客户区长度
+  if (mBuf->w - mBuf->r <= length - offset) {  // buff not read <= user buff len
     memcpy(buf + offset, mBuf->p + mBuf->r, mBuf->w - mBuf->r);
     offset += mBuf->w - mBuf->r;
     if (err != MSGBUF_32K) {
@@ -272,7 +273,7 @@ int __recv(socket_function* owner, const char* buf, int length) {
     } else {
       goto NEXT;
     }
-  } else {  // 缓冲区未读数据 > 客户区长度
+  } else {  // buff not read > user buff len
     memcpy(buf + offset, mBuf->p + mBuf->r, length - offset);
     mBuf->r += length - offset;
     return length;

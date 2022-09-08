@@ -10,6 +10,8 @@ int __optchk(socket_option* opt) {
   if (opt->port < 0 || opt->port > 65536) return OPT_PORT;
 
   if (opt->host == 0 || opt->host[0] == '\0') return OPT_HOST;
+
+  return 0;
 }
 
 int __open(socket_function* owner) {

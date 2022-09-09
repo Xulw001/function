@@ -304,7 +304,9 @@ u_int __stdcall __bio_commucation(void* params)
           unlock(&lock_socket);
           continue;
         } else if (err < 0) {
+#ifdef _WIN32
           if (__errno() == WSAECONNRESET) goto Close;
+#endif
           ERROUT("recv", __errno());
         }
       }

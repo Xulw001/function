@@ -292,21 +292,23 @@ int __close0(socket_function* owner) {
   if (owner->mSocket->ssl_st->ctx != NULL)
     SSL_CTX_free(owner->mSocket->ssl_st->ctx);
 
-  socket_fd* pfd = owner->mSocket->client;
-  for (int i = 0; i < CT_NUM; i++) {
-    if (pfd->use == 0) continue;
-    for (int k = 0; k < MAX_CONNECT; k++) {
-      if (pfd[i].cfd[k]) {
+  if (owner->mSocket->client != NULL) {
+    socket_fd* pfd = owner->mSocket->client;
+    for (int i = 0; i < CT_NUM; i++) {
+      if (pfd->use == 0) continue;
+      for (int k = 0; k < MAX_CONNECT; k++) {
+        if (pfd[i].cfd[k]) {
 #ifndef _WIN32
-        close(pfd[i].cfd[k]);
+          close(pfd[i].cfd[k]);
 #else
-        closesocket(pfd[i].cfd[k]);
+          closesocket(pfd[i].cfd[k]);
 #endif
-        pfd[i].cfd[k] = INVALID_SOCKET;
+          pfd[i].cfd[k] = INVALID_SOCKET;
+        }
       }
     }
+    owner->mSocket->client = 0x00;
   }
-  owner->mSocket->client = 0x00;
 
   if (owner->mSocket->fd != INVALID_SOCKET) {
 #ifndef _WIN32

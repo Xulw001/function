@@ -139,7 +139,7 @@ int createPool(struct thread_pool** pool, int max_thread, int onfull) {
 int destroyPool(struct thread_pool* pool) {
   struct task* end_task = NULL;
 
-  if (pool->shutdown) {
+  if (pool == 0 || pool->shutdown) {
     return 0;
   }
 #ifndef _WIN32

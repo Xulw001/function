@@ -3,18 +3,19 @@
 
 int handle(SOCKET fd, SSL *ssl) {
   int err;
-  char buf[1024] = {0};
+  char buf[1024];
 
-  while (1) {
+	memset(buf, 0x00, sizeof(buf));
+RetryR:
     err = recv(fd, buf, 1024, 0);
     if (err < 0) {
-      continue;
+      goto RetryR;
     }
-    err = send(fd, buf, 1024, 0);
+RetryW:
+    err = send(fd, buf, strlen(buf), 0);
     if (err < 0) {
-      continue;
+      goto RetryW;
     }
-  }
 }
 
 void server() {

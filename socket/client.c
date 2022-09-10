@@ -14,25 +14,25 @@ socket_function* initClient(socket_option* opt) {
 
   if ((err = __optchk(opt)) < 0) {
     ERROUT("socket_option", err);
-    return 0;
+    return err;
   }
 
   fun = (socket_function*)malloc(sizeof(socket_function));
   if (fun == 0) {
     ERROUT("malloc", __errno());
-    return 0;
+    return MEMORY_ERR;
   }
 
   mSocket = (socket_base*)malloc(sizeof(socket_base));
   if (mSocket == 0) {
     ERROUT("malloc", __errno());
-    return 0;
+    return MEMORY_ERR;
   }
 
   ssl_st = (socket_ssl*)malloc(sizeof(socket_ssl));
   if (ssl_st == 0) {
     ERROUT("malloc", __errno());
-    return 0;
+    return MEMORY_ERR;
   }
   memset(ssl_st, 0x00, sizeof(socket_ssl));
 
@@ -40,7 +40,7 @@ socket_function* initClient(socket_option* opt) {
     rw = (socket_buff*)malloc(sizeof(socket_buff) + MSGBUF_32K);
     if (rw == 0) {
       ERROUT("malloc", __errno());
-      return 0;
+      return MEMORY_ERR;
     }
     rw->r = 0;
     rw->w = -1;
@@ -62,7 +62,9 @@ socket_function* initClient(socket_option* opt) {
   mSocket->client = 0x00;
   mSocket->opt.host = (char*)malloc(strlen(opt->host) + 1);
   strcpy(mSocket->opt.host, opt->host);
-
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
   return fun;
 }
 
@@ -99,11 +101,7 @@ int __connect(socket_function* owner) {
   hints.ai_socktype = SOCK_STREAM;
 
   if ((err = getaddrinfo(server, chPort, &hints, &pAI)) != 0) {
-#ifdef _WIN32
-    ERROUT("getaddrinfo", WSAGetLastError());
-#else
-    ERROUT("getaddrinfo", err);
-#endif
+    ERROUT("getaddrinfo", __errno());
     return CONNECT_ERR;
   }
 
@@ -111,11 +109,7 @@ int __connect(socket_function* owner) {
       socket(pAI->ai_family, pAI->ai_socktype, pAI->ai_protocol);
   if (owner->mSocket->fd == INVALID_SOCKET) {
     freeaddrinfo(pAI);
-#ifdef _WIN32
-    ERROUT("socket", WSAGetLastError());
-#else
     ERROUT("socket", __errno());
-#endif
     return CONNECT_ERR;
   }
 
@@ -124,36 +118,15 @@ int __connect(socket_function* owner) {
     option = 1;
     if ((setsockopt(owner->mSocket->fd, IPPROTO_TCP, TCP_NODELAY,
                     (char*)&option, optlen)) != 0) {
-#ifdef _WIN32
-      ERROUT("getaddrinfo", WSAGetLastError());
-#else
-      ERROUT("getaddrinfo", err);
-#endif
+      ERROUT("getaddrinfo", __errno());
       return CONNECT_ERR;
     }
-  }
-
-  pSockAddr = (PSOCKADDR)pAI->ai_addr;
-  switch (pAI->ai_family) {
-    case AF_INET:
-      if (((struct sockaddr_in*)pSockAddr)->sin_port == 0)
-        ((struct sockaddr_in*)pSockAddr)->sin_port = htons((u_short)opt->port);
-      break;
-    case AF_INET6:
-      if (((struct sockaddr_in6*)pSockAddr)->sin6_port == 0)
-        ((struct sockaddr_in6*)pSockAddr)->sin6_port =
-            htons((u_short)opt->port);
-      break;
   }
 
   if (connect(owner->mSocket->fd, (PSOCKADDR)pAI->ai_addr, pAI->ai_addrlen) <
       0) {
     freeaddrinfo(pAI);
-#ifdef _WIN32
-    ERROUT("connect", WSAGetLastError());
-#else
     ERROUT("socket", __errno());
-#endif
     return CONNECT_ERR;
   }
 
@@ -201,6 +174,8 @@ int __send(socket_function* owner, const char* buf, int length) {
     return STATE_ERR;
   }
 
+  if (length == 0) return 0;
+
   if (mBuf == 0x00) {
     return __bio_write(owner->mSocket, buf, length);
   }
@@ -220,8 +195,8 @@ int __send(socket_function* owner, const char* buf, int length) {
   while (MSGBUF_32K - mBuf->w < length) {  // buff size < data len
     memcpy(mBuf->p + mBuf->w, buf + offset, MSGBUF_32K - mBuf->w);
     offset += MSGBUF_32K - mBuf->w;
-    if (__bio_write(owner->mSocket, mBuf->p + mBuf->r, MSGBUF_32K - mBuf->r) <
-        0) {
+    err = __bio_write(owner->mSocket, mBuf->p + mBuf->r, MSGBUF_32K - mBuf->r);
+    if (err < 0) {
       return err;
     }
     mBuf->w = 0;
@@ -246,6 +221,8 @@ int __recv(socket_function* owner, const char* buf, int length) {
     return STATE_ERR;
   }
 
+  if (length == 0) return 0;
+
   if (mBuf == 0x00) {
     return __bio_read(owner->mSocket, buf, length);
   }
@@ -256,7 +233,7 @@ int __recv(socket_function* owner, const char* buf, int length) {
     }
   }
 
-  // 
+  //
   if (mBuf->w == 0) {  // buff empty
   NEXT:
     if ((err = __bio_read(owner->mSocket, mBuf->p, MSGBUF_32K)) < 0) {

@@ -16,7 +16,7 @@ LIBDIR = $(addprefix -L,$(LIBDIR32))
 LDLIBS = -lpthread -lssl -lcrypto
 
 ## C Pre Processor Options (Multi-thread)
-CPPFLAGS := -D_REENTRANT -D_MulThread -O2 -Werror
+CPPFLAGS := -D_REENTRANT -D_MulThread -O2 #-Werror
 ## C Compile Options
 CFLAGS :=
 ## C++ Compile Options

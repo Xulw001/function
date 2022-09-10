@@ -3,14 +3,13 @@
 int __optchk(socket_option* opt) {
   char flg =
       opt->udp_flg | opt->aio_flg | opt->nio_flg | opt->cls_flg | opt->ssl_flg;
-  if (flg < 0 || flg > 1) return OPT_FLG;
+  if (flg < 0 || flg > 1) return OPT_ERR;
 
-  if (opt->ssl_flg < 0 || opt->nag_flg > 2) return OPT_FLG;
+  if (opt->ssl_flg < 0 || opt->nag_flg > 2) return OPT_ERR;
 
-  if (opt->port < 0 || opt->port > 65536) return OPT_PORT;
+  if (opt->port < 0 || opt->port > 65536) return OPT_ERR;
 
-  if (opt->host == 0 || opt->host[0] == '\0') return OPT_HOST;
-
+  if (opt->host == 0 || opt->host[0] == '\0') return OPT_ERR;
   return 0;
 }
 
@@ -21,13 +20,13 @@ int __open(socket_function* owner) {
   wVersion = MAKEWORD(2, 2);
   if (WSAStartup(wVersion, &wsaData) != 0) {
     ERROUT("WSAStartup", __errno());
-    return __errno();
+    return WAS_ERR;
   }
 
   if (wVersion != wsaData.wVersion) {
     WSACleanup();
-    ERROUT("WSAStartup", WAS_VER);
-    return WAS_VER;
+    ERROUT("WSAStartup.wVersion", wVersion);
+    return WAS_ERR;
   }
 #endif
 
@@ -83,14 +82,15 @@ int __sslErr(char* file, int line, char* fun) {
   strncpy(msg, pTmp, 1024);
   ERR_free_strings();
 #ifdef _DEBUG
-  printf("error appear at %s:%d in %s, errno = %d, message = %s ", file, line,
+  printf("error appear at %s:%d in %s, errno = %d, message = %s\n", file, line,
          fun, ulErr, msg);
 #endif
-  return ulErr;
+  return SSL_ERR;
 }
 
 int __sslChk(SSL* ssl, int ret) {
-  switch (SSL_get_error(ssl, ret)) {
+  int err = SSL_get_error(ssl, ret);
+  switch (err) {
     case SSL_ERROR_NONE:         // ok
     case SSL_ERROR_ZERO_RETURN:  // close
       return 0;
@@ -115,9 +115,6 @@ int __load_cert_file(socket_function* owner, const char* key_file,
   SSL_library_init();
   OpenSSL_add_all_algorithms();
   SSL_load_error_strings();
-  if (owner->mSocket->opt.udp_flg) {
-    sslV += _DTLS_CLIENT;
-  }
   switch (sslV) {
     case _SSLV23_CLIENT:
       meth = SSLv23_client_method();
@@ -217,22 +214,22 @@ int __load_cert_file(socket_function* owner, const char* key_file,
 }
 
 int __fin(socket_function* owner) {
-  int err = 0, rtv = 0;
+  int err = 0;
   socket_buff* buff = 0;
 
   buff = owner->mSocket->buf;
   switch (owner->mSocket->state) {
     case _CS_REQ_SENT:
-      if (__bio_write(owner->mSocket, buff->p + buff->r, buff->w - buff->r) <
-          0) {
+      err = __bio_write(owner->mSocket, buff->p + buff->r, buff->w - buff->r);
+      if (err < 0) {
         return err;
       }
       break;
     case _CS_REQ_RECV:
-      while ((rtv = __bio_read(owner->mSocket, buff->p, MSGBUF_32K)) != 0) {
-        if (rtv < 0) {
+      while ((err = __bio_read(owner->mSocket, buff->p, MSGBUF_32K)) != 0) {
+        if (err < 0) {
           return err;
-        } else if (rtv < MSGBUF_32K) {
+        } else if (err < MSGBUF_32K) {
           break;
         }
       }
@@ -249,8 +246,10 @@ int __close(socket_function* owner, int group, int idx) {
   }
   if (owner->mSocket->ssl_st->fds != NULL) {
     if (owner->mSocket->ssl_st->fds[group].ssl[idx]) {
+      SSL_shutdown(owner->mSocket->ssl_st->fds[group].ssl[idx]);
       SSL_free(owner->mSocket->ssl_st->fds[group].ssl[idx]);
       owner->mSocket->ssl_st->fds[group].ssl[idx] = 0x00;
+      owner->mSocket->ssl_st->fds[group].p_flg[idx] = 1;
     }
   }
 
@@ -262,6 +261,8 @@ int __close(socket_function* owner, int group, int idx) {
       closesocket(owner->mSocket->client[group].cfd[idx]);
 #endif
       owner->mSocket->client[group].cfd[idx] = INVALID_SOCKET;
+      owner->mSocket->client[group].flg[idx] = 0;
+      owner->mSocket->client[group].use--;
     }
   }
 
@@ -275,18 +276,21 @@ int __close0(socket_function* owner) {
   }
 
   if (owner->mSocket->ssl_st->ssl != NULL) {
+    if (owner->mSocket->ssl_st->fds) {
+      socket_ssl_fd* fd = owner->mSocket->ssl_st->fds;
+      for (int i = 0; i < CT_NUM; i++) {
+        for (int k = 0; k < MAX_CONNECT; k++) {
+          if (fd[i].ssl[k]) {
+            SSL_shutdown(fd[i].ssl[k]);
+            SSL_free(fd[i].ssl[k]);
+            fd[i].ssl[k] = 0x00;
+          }
+        };
+      }
+    }
+    SSL_shutdown(owner->mSocket->ssl_st->ssl);
     SSL_free(owner->mSocket->ssl_st->ssl);
     owner->mSocket->ssl_st->ssl = 0;
-
-    socket_ssl_fd* fd = owner->mSocket->ssl_st->fds;
-    for (int i = 0; i < CT_NUM; i++) {
-      for (int k = 0; k < MAX_CONNECT; k++) {
-        if (fd[i].ssl[k]) {
-          SSL_free(fd[i].ssl[k]);
-          fd[i].ssl[k] = 0x00;
-        }
-      };
-    }
   }
 
   if (owner->mSocket->ssl_st->ctx != NULL)

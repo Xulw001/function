@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <netdb.h>
 #include <netinet/tcp.h>
+#include <signal.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -27,11 +28,11 @@ typedef struct addrinfo ADDRINFOT;
 #endif
 
 #ifndef MAX_CONNECT
-#define MAX_CONNECT (1024)
+#define MAX_CONNECT 64
 #endif
 
 #ifndef CT_NUM
-#define CT_NUM (8)
+#define CT_NUM (1)
 #endif
 
 #ifndef BACKLOG
@@ -61,13 +62,17 @@ typedef enum {
 } State;
 
 typedef enum {
-  OPT_FLG = -1,      //
-  OPT_PORT = -2,     // port exception
-  OPT_HOST = -3,     // hostname exception
-  WAS_VER = -4,      //
-  STATE_ERR = -5,    //
-  CONNECT_ERR = -6,  //
-  BIND_ERR = -7,     //
+  SOCKET_CLOSE = -99,
+  SOCKET_DOWN,
+  IO_ERR = -9,  //
+  MEMORY_ERR,   //
+  SSL_ERR,      //
+  SELECT_ERR,   //
+  BIND_ERR,     //
+  CONNECT_ERR,  //
+  STATE_ERR,    //
+  WAS_ERR,      //
+  OPT_ERR       // hostname exception
 } InterError;
 
 typedef enum {
@@ -87,7 +92,7 @@ typedef enum {
   _DTLSV12_SERVER,
 } SSLVER;
 
-typedef int (*callback)(SOCKET fd, SSL* ssl_fd);
+typedef int (*callback)(void*, SOCKET fd, SSL* ssl_fd);
 
 typedef struct {
   char udp_flg;  // TCP/UDP
@@ -104,6 +109,7 @@ typedef struct {
 
 typedef struct {
   SOCKET cfd[MAX_CONNECT];
+  int flg[MAX_CONNECT];
   int use;
 } socket_fd;
 
@@ -146,10 +152,9 @@ typedef struct {
   int (*ssl_connect)(void*);
 #else
   char* heloMsg;
-  int (*callback)(SOCKET, SSL*);
-  int (*close)(void*, int, int);
+  int (*callback)(void*,SOCKET, SSL*);
   int (*listen)(void*);
-  int (*ssl_bind)(void*, int, int);
+  SSL* (*ssl_bind)(void*, SOCKET fd);
 #endif
 } socket_function;
 
@@ -177,8 +182,8 @@ int __recv(socket_function* owner, const char* buf, int size);
 int __load_cert_file(socket_function* owner, const char* key_file,
                      const char* cert_file, int sslV, int filev);
 int __bind(socket_function* owner);
-int __ssl_bind(socket_function* owner, int group, int idx);
 int __ssl_listen(socket_function* owner);
+SSL* __ssl_bind(socket_function* owner, SOCKET fd);
 
 #define IsEmpty(buf) ((buf->r == 0) && (buf->w == -1))
 int __open(socket_function* owner);
@@ -233,12 +238,12 @@ int __bio_sub_commucation(int* final, void* params);
 // int __ssl_bind(socket_function_server* owner, int index, int group);
 #ifdef _DEBUG
 #ifndef ERROUT
-#define ERROUT(fun, err)                                                     \
-  printf("error appear at %s:%d in %s, errno = %d", __FILE__, __LINE__, fun, \
+#define ERROUT(fun, err)                                                       \
+  printf("error appear at %s:%d in %s, errno = %d\n", __FILE__, __LINE__, fun, \
          err)
 
 #define WARNING(fun) \
-  printf("warning appear at %s:%d in %s", __FILE__, __LINE__, fun)
+  printf("warning appear at %s:%d in %s\n", __FILE__, __LINE__, fun)
 #endif
 #else
 #define ERROUT(fun, err) ;

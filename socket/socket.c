@@ -1,11 +1,10 @@
 #include "socket.h"
 
 int __optchk(socket_option* opt) {
-  char flg =
-      opt->udp_flg | opt->aio_flg | opt->nio_flg | opt->cls_flg | opt->ssl_flg;
+  char flg = opt->udp_flg | opt->aio_flg | opt->cls_flg | opt->ssl_flg;
   if (flg < 0 || flg > 1) return OPT_ERR;
 
-  if (opt->ssl_flg < 0 || opt->nag_flg > 2) return OPT_ERR;
+  if (opt->nag_flg < 0 || opt->nag_flg > 2) return OPT_ERR;
 
   if (opt->port < 0 || opt->port > 65536) return OPT_ERR;
 

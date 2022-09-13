@@ -96,12 +96,11 @@ typedef int (*callback)(void*, SOCKET fd, SSL* ssl_fd);
 
 typedef struct {
   char udp_flg;  // TCP/UDP
-  char nio_flg;  // block/noblock
   char nag_flg;  // 0: default 1: close Nagle 2: user decide
   char cls_flg;  // 0: default 1: clean socket buff
   char ssl_flg;  // SSL/TLS 0: open 1: SSL/TLS/DTLS
   char aio_flg;  // Win/IOCP Linux/epoll
-  char resv[2];
+  char resv[3];
   int timeout;
   int port;
   char* host;

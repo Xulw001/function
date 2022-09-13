@@ -189,6 +189,17 @@ int __bind(socket_function* owner) {
     return BIND_ERR;
   }
 
+  option = 1;
+#ifndef _WIN32
+  if (ioctl(mSocket->fd, FIONBIO, &option))
+#else
+  if (ioctlsocket(mSocket->fd, FIONBIO, &option))
+#endif
+  {
+    ERROUT("ioctl", __errno());
+    return BIND_ERR;
+  }
+
   if (opt->ssl_flg == 1) {
     if (owner->mSocket->ssl_st->p_flg == 0) {
       __load_cert_file(owner, 0, 0, 1, 0);
@@ -226,7 +237,6 @@ SSL* __ssl_bind(socket_function* owner, SOCKET fd) {
     if (SSL_accept(c_ssl) != 1) {
       return __sslErr(__FILE__, __LINE__, "SSL_accept");
     }
-
   }
 
   return c_ssl;

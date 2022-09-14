@@ -92,7 +92,7 @@ typedef enum {
   _DTLSV12_SERVER,
 } SSLVER;
 
-typedef int (*callback)(void*, SOCKET fd, SSL* ssl_fd);
+typedef SSL* (*callback)(void*, SOCKET fd, SSL* ssl_fd);
 
 typedef struct {
   char udp_flg;  // TCP/UDP
@@ -151,7 +151,7 @@ typedef struct {
   int (*ssl_connect)(void*);
 #else
   char* heloMsg;
-  int (*callback)(void*,SOCKET, SSL*);
+  SSL* (*callback)(void*,SOCKET, SSL*);
   int (*listen)(void*);
   SSL* (*ssl_bind)(void*, SOCKET fd);
 #endif

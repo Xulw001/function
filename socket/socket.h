@@ -107,9 +107,15 @@ typedef struct {
 } socket_option;
 
 typedef struct {
-  SOCKET cfd[MAX_CONNECT];
-  int flg[MAX_CONNECT];
+  SOCKET fd;
+  int shutdown;
+  int tasknum;
+  int tasklock;
+} socket_st;
+
+typedef struct {
   int use;
+  socket_st st[MAX_CONNECT];
 } socket_fd;
 
 typedef struct {
@@ -151,7 +157,7 @@ typedef struct {
   int (*ssl_connect)(void*);
 #else
   char* heloMsg;
-  SSL* (*callback)(void*,SOCKET, SSL*);
+  SSL* (*callback)(void*, SOCKET, SSL*);
   int (*listen)(void*);
   SSL* (*ssl_bind)(void*, SOCKET fd);
 #endif

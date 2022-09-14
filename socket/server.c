@@ -55,7 +55,10 @@ socket_function* initServer(socket_option* opt, callback cb, char* msg) {
   }
   for (int i = 0; i < CT_NUM; i++) {
     for (int j = 0; j < MAX_CONNECT; j++) {
-      fds[i].cfd[j] = INVALID_SOCKET;
+      fds[i].st[j].fd = INVALID_SOCKET;
+      fds[i].st[j].shutdown = 0;
+      fds[i].st[j].tasklock = 0;
+      fds[i].st[j].tasknum = 0;
     }
     fds[i].use = 0;
   }

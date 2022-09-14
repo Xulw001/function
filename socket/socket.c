@@ -253,14 +253,14 @@ int __close(socket_function* owner, int group, int idx) {
   }
 
   if (owner->mSocket->client != NULL) {
-    if (owner->mSocket->client[group].cfd[idx]) {
+    if (owner->mSocket->client[group].st[idx].fd != INVALID_SOCKET) {
 #ifndef _WIN32
-      close(owner->mSocket->client[group].cfd[idx]);
+      close(owner->mSocket->client[group].st[idx].fd);
 #else
-      closesocket(owner->mSocket->client[group].cfd[idx]);
+      closesocket(owner->mSocket->client[group].st[idx].fd);
 #endif
-      owner->mSocket->client[group].cfd[idx] = INVALID_SOCKET;
-      owner->mSocket->client[group].flg[idx] = 0;
+      owner->mSocket->client[group].st[idx].fd = INVALID_SOCKET;
+      owner->mSocket->client[group].st[idx].fd = 0;
       owner->mSocket->client[group].use--;
     }
   }
@@ -300,13 +300,13 @@ int __close0(socket_function* owner) {
     for (int i = 0; i < CT_NUM; i++) {
       if (pfd->use == 0) continue;
       for (int k = 0; k < MAX_CONNECT; k++) {
-        if (pfd[i].cfd[k]) {
+        if (pfd[i].st[k].fd) {
 #ifndef _WIN32
-          close(pfd[i].cfd[k]);
+          close(pfd[i].st[k].fd);
 #else
-          closesocket(pfd[i].cfd[k]);
+          closesocket(pfd[i].st[k].fd);
 #endif
-          pfd[i].cfd[k] = INVALID_SOCKET;
+          pfd[i].st[k].fd = INVALID_SOCKET;
         }
       }
     }

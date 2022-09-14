@@ -39,7 +39,7 @@ NEXT:
     tvTimeOut.tv_usec = 0;
     nfds = select(mSocket->fd + 1, &fds, NULL, NULL, &tvTimeOut);
     if (nfds == 0) {
-      return 0;
+      continue;
     } else if (nfds < 0) {
       ERROUT("select", __errno());
       return SELECT_ERR;
@@ -57,7 +57,7 @@ NEXT:
       for (int i = 0; i < CT_NUM; i++) {
         if (mSocket->client[i].use < MAX_CONNECT) {
           for (int j = 0; j < MAX_CONNECT; j++) {
-            if (mSocket->client[i].cfd[j] == INVALID_SOCKET) {
+            if (mSocket->client[i].st[j].fd == INVALID_SOCKET) {
               if (mSocket->opt.ssl_flg != 0) {
                 cssl = __ssl_bind(owner, cfd);
                 if (cssl < 0) {
@@ -100,7 +100,10 @@ NEXT:
                 }
               }
               lock(&lock_socket);
-              mSocket->client[i].cfd[j] = cfd;
+              mSocket->client[i].st[j].fd = cfd;
+              mSocket->client[i].st[j].shutdown = 0;
+              mSocket->client[i].st[j].tasknum = 0;
+              mSocket->client[i].st[j].tasklock = 0;
               mSocket->client[i].use++;
               unlock(&lock_socket);
               sFind = i;
@@ -176,10 +179,10 @@ u_int __stdcall __bio_commucation(void* params)
     FD_ZERO(&fds);
     for (int i = 0, j = 0;
          i < MAX_CONNECT && j < mSocket->client[para->group].use; i++) {
-      if (mSocket->client[para->group].cfd[i] != INVALID_SOCKET) {
-        FD_SET(mSocket->client[para->group].cfd[i], &fds);
-        if (mSocket->client[para->group].cfd[i] > max_fd) {
-          max_fd = mSocket->client[para->group].cfd[i];
+      if (mSocket->client[para->group].st[i].fd != INVALID_SOCKET) {
+        FD_SET(mSocket->client[para->group].st[i].fd, &fds);
+        if (mSocket->client[para->group].st[i].fd > max_fd) {
+          max_fd = mSocket->client[para->group].st[i].fd;
         }
         j++;
       }
@@ -193,13 +196,29 @@ u_int __stdcall __bio_commucation(void* params)
     }
 
     for (int i = 0, j = 0; i < MAX_CONNECT && j < nfds; i++) {
-      if (mSocket->client[para->group].cfd[i] == INVALID_SOCKET ||
-          !FD_ISSET(mSocket->client[para->group].cfd[i], &fds)) {
+      if (mSocket->client[para->group].st[i].fd == INVALID_SOCKET ||
+          !FD_ISSET(mSocket->client[para->group].st[i].fd, &fds)) {
         continue;
       }
       j++;
 
-      mSocket->client[para->group].flg[i] = 1;
+#ifdef _WIN32
+      if (_InterlockedCompareExchange(
+              (unsigned long*)&mSocket->client[para->group].st[i].tasknum, 2,
+              2) == 2)
+#else
+      if (__sync_bool_compare_and_swap(
+              &mSocket->client[para->group].st[i].tasknum, 2, 2) == 1)
+#endif
+      {
+        continue;
+      }
+#ifdef _WIN32
+      _InterlockedIncrement(&mSocket->client[para->group].st[i].tasknum);
+#else
+      __sync_fetch_and_add(&mSocket->client[para->group].st[i].tasknum, 1);
+#endif
+
       sockpara = (SocketParamter*)malloc(sizeof(SocketParamter));
       sockpara->group = para->group;
       sockpara->idx = i;
@@ -223,14 +242,28 @@ int __bio_sub_commucation(int* final, void* params) {
   SocketParamter* para;
   para = params;
   mSocket = para->owner->mSocket;
-  fd = mSocket->client[para->group].cfd[para->idx];
+  fd = mSocket->client[para->group].st[para->idx].fd;
 
-  while (_InterlockedCompareExchange(
-             (unsigned long*)&mSocket->client[para->group].flg[para->idx], 1,
-             0) == LOCK)
+#ifdef _WIN32
+  while (
+      _InterlockedCompareExchange(
+          (unsigned long*)&mSocket->client[para->group].st[para->idx].tasklock,
+          1, 0) == 1)
     ;
+#else
+  while (__sync_bool_compare_and_swap(
+             &mSocket->client[para->group].st[para->idx].tasklock, 0, 1) == 0)
+    ;
+#endif
 
-Retry:
+  if (mSocket->client[para->group].st[para->idx].shutdown == 1) {
+    goto END;
+  }
+
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+
   if (mSocket->ssl_st->p_flg == 1 &&
       mSocket->ssl_st->fds[para->group].p_flg[para->idx] == 2) {
     ssl = mSocket->ssl_st->fds[para->group].ssl[para->idx];
@@ -238,7 +271,7 @@ Retry:
     if (err <= 0) {
       switch (__sslChk(ssl, err)) {
         case 1:
-          goto Retry;
+          goto END;
         case 0:
           if (err == 0) goto Close;
         default:
@@ -249,11 +282,6 @@ Retry:
 #else
           if (err == 0) goto Close;
           if (err == ECONNRESET) {
-            SSL_free(ssl);
-            lock(&lock_socket);
-            mSocket->ssl_st->fds[para->group].ssl[i] = 0x00;
-            mSocket->ssl_st->fds[para->group].p_flg[i] = 1;
-            unlock(&lock_socket);
             goto Close;
           }
 #endif
@@ -261,23 +289,32 @@ Retry:
       }
     }
   } else {
-    fd = mSocket->client[para->group].cfd[para->idx];
+    fd = mSocket->client[para->group].st[para->idx].fd;
     err = recv(fd, buf, sizeof(buf), MSG_PEEK);
     if (err == 0) {
     Close:
       lock(&lock_socket);
       __close(para->owner, para->group, para->idx);
       unlock(&lock_socket);
+
+#ifdef _WIN32
+      _InterlockedExchange(
+          (unsigned long*)&mSocket->client[para->group].st[para->idx].shutdown,
+          1);
+#else
+      __sync_lock_test_and_set(
+          &mSocket->client[para->group].st[para->idx].shutdown, 1);
+#endif
     } else if (err < 0) {
       err = __errno();
-      if (err == EAGAIN || err == EWOULDBLOCK) goto Retry;
-      ERROUT("recv", err);
 #ifdef _WIN32
-      if (err == WSAECONNABORTED) goto Close;
-      if (err == WSAECONNRESET) goto Close;
+      if (err == WSAECONNABORTED || err == WSAECONNRESET) goto Close;
+      if (err != WSAEWOULDBLOCK) ERROUT("recv", err);
 #else
       if (err == ECONNRESET) goto Close;
+      if (err != EAGAIN && err != EWOULDBLOCK) ERROUT("recv", err);
 #endif
+      goto END;
     }
   }
 
@@ -286,6 +323,19 @@ Retry:
     para->owner->mSocket->ssl_st->fds[para->group].ssl[para->idx] = ssl;
     para->owner->mSocket->ssl_st->fds[para->group].p_flg[para->idx] = 2;
   }
+
+END:
+#ifdef _WIN32
+  _InterlockedExchange(
+      (unsigned long*)&mSocket->client[para->group].st[para->idx].tasklock, 0);
+  _InterlockedDecrement(
+      (unsigned long*)&mSocket->client[para->group].st[para->idx].tasknum);
+#else
+  __sync_lock_test_and_set(&mSocket->client[para->group].st[para->idx].tasklock,
+                           0);
+  __sync_fetch_and_sub(&mSocket->client[para->group].st[para->idx].tasknum, 1);
+#endif
+
   free(params);
   return 0;
 }

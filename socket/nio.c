@@ -162,7 +162,6 @@ u_int __stdcall __bio_commucation(void* params)
   struct thread_pool* pool;
   paramter* para;
   SocketParamter* sockpara;
-  char buf[8];
 
   para = params;
   mSocket = para->owner->mSocket;
@@ -200,58 +199,6 @@ u_int __stdcall __bio_commucation(void* params)
       }
       j++;
 
-    Retry:
-      if (mSocket->ssl_st->p_flg == 1 &&
-          mSocket->ssl_st->fds[para->group].p_flg[i] == 2) {
-        err = SSL_peek(mSocket->ssl_st->fds[para->group].ssl[i], buf,
-                       sizeof(buf));
-        if (err <= 0) {
-          switch (__sslChk(mSocket->ssl_st->fds[para->group].ssl[i], err)) {
-            case 1:
-              goto Retry;
-            case 0:
-              if (err == 0) goto Close;
-            default:
-              err = __errno();
-              ERROUT("SSL_peek", err);
-#ifdef _WIN32
-              if (err == WSAECONNRESET) goto Close;
-#else
-              if (err == 0) goto Close;
-              if (err == ECONNRESET) {
-                SSL_free(mSocket->ssl_st->fds[para->group].ssl[i]);
-                lock(&lock_socket);
-                mSocket->ssl_st->fds[para->group].ssl[i] = 0x00;
-                mSocket->ssl_st->fds[para->group].p_flg[i] = 1;
-                unlock(&lock_socket);
-                goto Close;
-              }
-#endif
-              continue;
-              break;
-          }
-        }
-      } else {
-        err = recv(mSocket->client[para->group].cfd[i], buf, sizeof(buf),
-                   MSG_PEEK);
-        if (err == 0) {
-        Close:
-          lock(&lock_socket);
-          __close(para->owner, para->group, i);
-          unlock(&lock_socket);
-          continue;
-        } else if (err < 0) {
-          err = __errno();
-          if (err == EAGAIN || err == EWOULDBLOCK) goto Retry;
-          ERROUT("recv", err);
-#ifdef _WIN32
-          if (err == WSAECONNABORTED) goto Close;
-          if (err == WSAECONNRESET) goto Close;
-#else
-          if (err == ECONNRESET) goto Close;
-#endif
-        }
-      }
       mSocket->client[para->group].flg[i] = 1;
       sockpara = (SocketParamter*)malloc(sizeof(SocketParamter));
       sockpara->group = para->group;
@@ -268,22 +215,77 @@ u_int __stdcall __bio_commucation(void* params)
 }
 
 int __bio_sub_commucation(int* final, void* params) {
-  SOCKET fd = 0;
+  int err = 0;
   SSL* ssl = 0;
+  SOCKET fd = 0;
+  char buf[4] = {0};
+  socket_base* mSocket;
   SocketParamter* para;
   para = params;
-  fd = para->owner->mSocket->client[para->group].cfd[para->idx];
-  ssl = para->owner->mSocket->ssl_st->fds
-            ? para->owner->mSocket->ssl_st->fds[para->group].ssl[para->idx]
-            : 0;
+  mSocket = para->owner->mSocket;
+  fd = mSocket->client[para->group].cfd[para->idx];
+
+  while (_InterlockedCompareExchange(
+             (unsigned long*)&mSocket->client[para->group].flg[para->idx], 1,
+             0) == LOCK)
+    ;
+
+Retry:
+  if (mSocket->ssl_st->p_flg == 1 &&
+      mSocket->ssl_st->fds[para->group].p_flg[para->idx] == 2) {
+    ssl = mSocket->ssl_st->fds[para->group].ssl[para->idx];
+    err = SSL_peek(ssl, buf, sizeof(buf));
+    if (err <= 0) {
+      switch (__sslChk(ssl, err)) {
+        case 1:
+          goto Retry;
+        case 0:
+          if (err == 0) goto Close;
+        default:
+          err = __errno();
+          ERROUT("SSL_peek", err);
+#ifdef _WIN32
+          if (err == WSAECONNRESET) goto Close;
+#else
+          if (err == 0) goto Close;
+          if (err == ECONNRESET) {
+            SSL_free(ssl);
+            lock(&lock_socket);
+            mSocket->ssl_st->fds[para->group].ssl[i] = 0x00;
+            mSocket->ssl_st->fds[para->group].p_flg[i] = 1;
+            unlock(&lock_socket);
+            goto Close;
+          }
+#endif
+          break;
+      }
+    }
+  } else {
+    fd = mSocket->client[para->group].cfd[para->idx];
+    err = recv(fd, buf, sizeof(buf), MSG_PEEK);
+    if (err == 0) {
+    Close:
+      lock(&lock_socket);
+      __close(para->owner, para->group, para->idx);
+      unlock(&lock_socket);
+    } else if (err < 0) {
+      err = __errno();
+      if (err == EAGAIN || err == EWOULDBLOCK) goto Retry;
+      ERROUT("recv", err);
+#ifdef _WIN32
+      if (err == WSAECONNABORTED) goto Close;
+      if (err == WSAECONNRESET) goto Close;
+#else
+      if (err == ECONNRESET) goto Close;
+#endif
+    }
+  }
+
   ssl = para->owner->callback(para->owner, fd, ssl);
   if (ssl) {
     para->owner->mSocket->ssl_st->fds[para->group].ssl[para->idx] = ssl;
     para->owner->mSocket->ssl_st->fds[para->group].p_flg[para->idx] = 2;
   }
-  lock(&lock_socket);
-  para->owner->mSocket->client[para->group].flg[para->idx] = 0;
-  unlock(&lock_socket);
   free(params);
   return 0;
 }

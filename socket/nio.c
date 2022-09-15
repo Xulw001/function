@@ -60,7 +60,7 @@ NEXT:
             if (mSocket->client[i].st[j].fd == INVALID_SOCKET) {
               if (mSocket->opt.ssl_flg != 0) {
                 cssl = __ssl_bind(owner, cfd);
-                if (cssl < 0) {
+                if (cssl == 0) {
                   ERROUT("SSL_bind", __errno());
                   goto NEXT;
                 }
@@ -190,7 +190,7 @@ u_int __stdcall __bio_commucation(void* params)
 
     tvTimeOut.tv_sec = 0;
     tvTimeOut.tv_usec = 0;
-    nfds = select(mSocket->fd + 1, &fds, NULL, NULL, &tvTimeOut);
+    nfds = select(max_fd + 1, &fds, NULL, NULL, &tvTimeOut);
     if (nfds <= 0) {
       continue;
     }
@@ -264,64 +264,63 @@ int __bio_sub_commucation(int* final, void* params) {
   signal(SIGPIPE, SIG_IGN);
 #endif
 
-  if (mSocket->ssl_st->p_flg == 1 &&
-      mSocket->ssl_st->fds[para->group].p_flg[para->idx] == 2) {
-    ssl = mSocket->ssl_st->fds[para->group].ssl[para->idx];
-    err = SSL_peek(ssl, buf, sizeof(buf));
-    if (err <= 0) {
-      switch (__sslChk(ssl, err)) {
-        case 1:
-          goto END;
-        case 0:
-          if (err == 0) goto Close;
-        default:
-          err = __errno();
-          ERROUT("SSL_peek", err);
+  while (1) {
+    if (mSocket->ssl_st->p_flg == 1 &&
+        mSocket->ssl_st->fds[para->group].p_flg[para->idx] == 2) {
+      ssl = mSocket->ssl_st->fds[para->group].ssl[para->idx];
+      err = SSL_peek(ssl, buf, sizeof(buf));
+      if (err <= 0) {
+        switch (__sslChk(ssl, err)) {
+          case 1:
+            goto END;
+          case 0:
+            if (err == 0) goto Close;
+          default:
+            err = __errno();
 #ifdef _WIN32
-          if (err == WSAECONNRESET) goto Close;
-#else
-          if (err == 0) goto Close;
-          if (err == ECONNRESET) {
-            goto Close;
-          }
+            if (err == WSAEWOULDBLOCK) continue;
 #endif
-          break;
+            __sslErr(__FILE__, __LINE__, "SSL_peek");
+            ERROUT("SSL_peek", err);
+            goto Close;
+        }
+      }
+    } else {
+      fd = mSocket->client[para->group].st[para->idx].fd;
+      err = recv(fd, buf, sizeof(buf), MSG_PEEK);
+      if (err == 0) {
+      Close:
+        lock(&lock_socket);
+        __close(para->owner, para->group, para->idx);
+        unlock(&lock_socket);
+
+#ifdef _WIN32
+        _InterlockedExchange((unsigned long*)&mSocket->client[para->group]
+                                 .st[para->idx]
+                                 .shutdown,
+                             1);
+#else
+        __sync_lock_test_and_set(
+            &mSocket->client[para->group].st[para->idx].shutdown, 1);
+#endif
+        break;
+      } else if (err < 0) {
+        err = __errno();
+#ifdef _WIN32
+        if (err == WSAEWOULDBLOCK) break;
+#else
+        if (err == EAGAIN || err == EWOULDBLOCK) break;
+#endif
+        ERROUT("recv", err);
+        goto Close;
       }
     }
-  } else {
-    fd = mSocket->client[para->group].st[para->idx].fd;
-    err = recv(fd, buf, sizeof(buf), MSG_PEEK);
-    if (err == 0) {
-    Close:
-      lock(&lock_socket);
-      __close(para->owner, para->group, para->idx);
-      unlock(&lock_socket);
 
-#ifdef _WIN32
-      _InterlockedExchange(
-          (unsigned long*)&mSocket->client[para->group].st[para->idx].shutdown,
-          1);
-#else
-      __sync_lock_test_and_set(
-          &mSocket->client[para->group].st[para->idx].shutdown, 1);
-#endif
-    } else if (err < 0) {
-      err = __errno();
-#ifdef _WIN32
-      if (err == WSAECONNABORTED || err == WSAECONNRESET) goto Close;
-      if (err != WSAEWOULDBLOCK) ERROUT("recv", err);
-#else
-      if (err == ECONNRESET) goto Close;
-      if (err != EAGAIN && err != EWOULDBLOCK) ERROUT("recv", err);
-#endif
-      goto END;
+    ssl = para->owner->callback(para->owner, fd, ssl);
+    if (ssl) {
+      para->owner->mSocket->ssl_st->fds[para->group].ssl[para->idx] = ssl;
+      para->owner->mSocket->ssl_st->fds[para->group].p_flg[para->idx] = 2;
     }
-  }
-
-  ssl = para->owner->callback(para->owner, fd, ssl);
-  if (ssl) {
-    para->owner->mSocket->ssl_st->fds[para->group].ssl[para->idx] = ssl;
-    para->owner->mSocket->ssl_st->fds[para->group].p_flg[para->idx] = 2;
   }
 
 END:

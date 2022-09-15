@@ -4,7 +4,7 @@ void client(int flg) {
   int err;
   char ch;
   socket_option opt = {
-      0, 0, 0, 0, 1, 0, 0, 0, 3, 65000, "192.168.31.1",
+      0, 0, 0, 1, 0, 0, 0, 0, 3, 65000, "192.168.31.1",
   };
   char buf[1024] = {0};
   socket_function *cli = initClient(&opt);

@@ -214,6 +214,7 @@ int __bind(socket_function* owner) {
 }
 
 SSL* __ssl_bind(socket_function* owner, SOCKET fd) {
+  int err;
   SSL* c_ssl;
   socket_ssl* ssl_st = owner->mSocket->ssl_st;
 
@@ -224,23 +225,38 @@ SSL* __ssl_bind(socket_function* owner, SOCKET fd) {
     ssl_st->fds = (socket_ssl_fd*)malloc(sizeof(socket_ssl_fd));
     if (ssl_st->fds == 0) {
       ERROUT("malloc", __errno());
-      return MEMORY_ERR;
+      return 0;
     }
   }
 
   if (fd != INVALID_SOCKET) {
     c_ssl = SSL_new(ssl_st->ctx);
-    if (c_ssl == NULL) return __sslErr(__FILE__, __LINE__, "SSL_new");
+    if (c_ssl == NULL) {
+      __sslErr(__FILE__, __LINE__, "SSL_new");
+      return 0;
+    }
 
-    if (!SSL_set_fd(c_ssl, fd))
-      return __sslErr(__FILE__, __LINE__, "SSL_set_fd");
+    if (!SSL_set_fd(c_ssl, fd)) {
+      __sslErr(__FILE__, __LINE__, "SSL_set_fd");
+      goto Err;
+    }
 
     SSL_set_accept_state(c_ssl);
 
-    if (SSL_accept(c_ssl) != 1) {
-      return __sslErr(__FILE__, __LINE__, "SSL_accept");
+    do {
+      err = SSL_accept(c_ssl);
+    } while (__sslChk(c_ssl, err) == 1);
+
+    if (err != 1) {
+      __sslErr(__FILE__, __LINE__, "SSL_accept");
+      goto Err;
     }
   }
 
   return c_ssl;
+Err:
+  if (c_ssl) {
+    SSL_free(c_ssl);
+  }
+  return 0;
 }

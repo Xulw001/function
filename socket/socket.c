@@ -78,7 +78,7 @@ int __sslErr(char* file, int line, char* fun) {
   memset(msg, 0x00, sizeof(msg));
   ulErr = ERR_get_error();
   pTmp = (char*)ERR_reason_error_string(ulErr);
-  strncpy(msg, pTmp, 1024);
+  if (pTmp) strncpy(msg, pTmp, 1024);
   ERR_free_strings();
 #ifdef _DEBUG
   printf("error appear at %s:%d in %s, errno = %d, message = %s\n", file, line,
@@ -245,7 +245,7 @@ int __close(socket_function* owner, int group, int idx) {
   }
   if (owner->mSocket->ssl_st->fds != NULL) {
     if (owner->mSocket->ssl_st->fds[group].ssl[idx]) {
-      SSL_shutdown(owner->mSocket->ssl_st->fds[group].ssl[idx]);
+      int err = SSL_shutdown(owner->mSocket->ssl_st->fds[group].ssl[idx]);
       SSL_free(owner->mSocket->ssl_st->fds[group].ssl[idx]);
       owner->mSocket->ssl_st->fds[group].ssl[idx] = 0x00;
       owner->mSocket->ssl_st->fds[group].p_flg[idx] = 1;
@@ -260,7 +260,6 @@ int __close(socket_function* owner, int group, int idx) {
       closesocket(owner->mSocket->client[group].st[idx].fd);
 #endif
       owner->mSocket->client[group].st[idx].fd = INVALID_SOCKET;
-      owner->mSocket->client[group].st[idx].fd = 0;
       owner->mSocket->client[group].use--;
     }
   }

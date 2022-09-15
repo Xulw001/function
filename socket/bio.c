@@ -44,6 +44,7 @@ int __bio_write(socket_base* socket, char* buf, int length) {
           ERROUT("SSL_write", err);
 #ifdef _WIN32
           if (err == WSAECONNRESET) return SOCKET_CLOSE;
+          if (err == WSAECONNABORTED) return SOCKET_DOWN;
 #else
           if (err == EPIPE) return SOCKET_DOWN;
 #endif
@@ -100,6 +101,7 @@ int __bio_read(socket_base* socket, char* buf, int length) {
           ERROUT("SSL_read", err);
 #ifdef _WIN32
           if (err == WSAECONNRESET) return SOCKET_CLOSE;
+          if (err == WSAECONNABORTED) return SOCKET_DOWN;
 #else
           if (err == 0) return SOCKET_CLOSE;
 #endif

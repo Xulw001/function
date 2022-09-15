@@ -28,7 +28,7 @@ RetryW:
 
 void server(int flg) {
   socket_option opt = {
-      0, 0, 0, 0, 1, 0, 0, 0, 0, 65000, "0.0.0.0",
+      0, 0, 0, 1, 0, 0, 0, 0, 0, 65000, "0.0.0.0",
   };
 
   char *msg = 0;

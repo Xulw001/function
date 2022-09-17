@@ -276,12 +276,7 @@ int __bio_sub_commucation(int* final, void* params) {
           case 0:
             if (err == 0) goto Close;
           default:
-            err = __errno();
-#ifdef _WIN32
-            if (err == WSAEWOULDBLOCK) continue;
-#endif
-            __sslErr(__FILE__, __LINE__, "SSL_peek");
-            ERROUT("SSL_peek", err);
+            __sslErr(__FILE__, __LINE__, __errno(), "SSL_peek");
             goto Close;
         }
       }

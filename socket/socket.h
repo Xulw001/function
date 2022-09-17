@@ -8,6 +8,7 @@
 #include <netinet/tcp.h>
 #include <signal.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -90,7 +91,23 @@ typedef enum {
   _DTLSV1_SERVER,
   _DTLSV12_CLIENT,
   _DTLSV12_SERVER,
-} SSLVER;
+} SSL_VER;
+
+typedef enum {
+  _SSL_VER_NONE,
+  _SSL_CLI_VER_PEER,
+  _SSL_SVR_VER_PEER,
+  _SSL_SVR_VER_PEER_UPPER,
+} SSL_VERIFY;
+
+typedef enum {
+  _SSL_CA_NO = 0x00010000,
+  _SSL_CA_DEFAULT = 0x00020000,
+  _SSL_CA_NATVE = 0x00030000,
+  _SSL_CA_PATH = 0x00040000,
+  _SSL_CA_FILE = 0x00050000,
+  _SSL_CA_ALL = 0x00060000
+} SSL_CA;
 
 typedef SSL* (*callback)(void*, SOCKET fd, SSL* ssl_fd);
 
@@ -126,8 +143,6 @@ typedef struct {
 typedef struct {
   SSL_CTX* ctx;
   SSL* ssl;
-  char* key_file;
-  char* cert_file;
   socket_ssl_fd* fds;
   char p_flg;
 } socket_ssl;
@@ -151,7 +166,7 @@ typedef struct {
   int (*fin)(void*);
   int (*send)(void*, const char*, int);
   int (*recv)(void*, const char*, int);
-  int (*load_cert_file)(void*, const char*, const char*, int, int);
+  int (*load_cert_file)(void*, int, int, int, int, ...);
 #ifndef _SOCKET_SERVER
   int (*connect)(void*);
   int (*ssl_connect)(void*);
@@ -163,19 +178,6 @@ typedef struct {
 #endif
 } socket_function;
 
-// typedef struct {
-//   socket_base* mSocket;
-//   int (*bind)(void*);
-//   int (*listen)(void*);
-//   int (*ssl_bind)(void*);
-//   int (*callback)(SOCKET fd, int nread);
-//   int (*callbackstart)(SOCKET fd, PSOCKADDR addrinfo);
-//   int (*close)(void*);
-// } socket_function_server;
-
-// socket_function_server* initServer(socket_option* opt, callback cb,
-//                                    callbackstart start);
-// int finalServer(socket_function_server* fun);
 socket_function* initClient(socket_option* opt);
 socket_function* initServer(socket_option* opt, callback cb, char* msg);
 int final(socket_function* fun);
@@ -184,8 +186,8 @@ int __close(socket_function* owner, int group, int idx);
 int __fin(socket_function* owner);
 int __send(socket_function* owner, const char* buf, int size);
 int __recv(socket_function* owner, const char* buf, int size);
-int __load_cert_file(socket_function* owner, const char* key_file,
-                     const char* cert_file, int sslV, int filev);
+int __load_cert_file(socket_function* owner, int sslV, int verifyCA, int filev,
+                     int args, ...);
 int __bind(socket_function* owner);
 int __ssl_listen(socket_function* owner);
 SSL* __ssl_bind(socket_function* owner, SOCKET fd);
@@ -195,7 +197,7 @@ int __open(socket_function* owner);
 int __close0(socket_function* owner);
 int __ssl_connect(socket_function* owner);
 int __optchk(socket_option* opt);
-int __sslErr(char* file, int line, char* fun);
+int __sslErr(char* file, int line, int err, char* fun);
 int __sslChk(SSL* ssl_st, int ret);
 
 int __bio_read(socket_base* socket, char* buf, int size);
@@ -208,39 +210,6 @@ u_int __stdcall __bio_commucation(void* params);
 #endif
 int __bio_sub_commucation(int* final, void* params);
 
-// int finalClient(socket_function* fun);
-
-// #ifdef _Server
-// #define socket_function socket_function
-// #define init(opt, cb, start) initServer(opt, cb, start)
-// #else
-// #define socket_function socket_function_server
-// #define init(opt) initClient(opt)
-// #endif
-
-// // Client :: No public for User
-// int final(void* fun);
-// int __open(socket_function* owner);
-// int __optchk(socket_option* opt);
-// int __load_cert_file(socket_function* owner, const char* key_file,
-//                      const char* cert_file, int sslV, int filev);
-// int __sslErr(char* file, int line, char* fun);
-// int __sslChk(SSL* ssl_st, int ret);
-
-// int __connect(socket_function* owner);
-// int __close0(socket_function* owner);
-// int __fin(socket_function* owner);
-// int __send(socket_function* owner, const char* buf, int size);
-// int __recv(socket_function* owner, const char* buf, int size);
-// int __bio_read(socket_function* owner, int* err);
-// int __bio_write(socket_function* owner, int* err);
-// int __ssl_connect(socket_function* owner);
-
-// int __bind(socket_function_server* owner);
-// int __listen(socket_function_server* owner);
-// int __close1(socket_function_server* owner);
-// int __closeClient(socket_function_server* owner, int index, int group);
-// int __ssl_bind(socket_function_server* owner, int index, int group);
 #ifdef _DEBUG
 #ifndef ERROUT
 #define ERROUT(fun, err)                                                       \

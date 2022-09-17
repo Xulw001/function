@@ -3,6 +3,9 @@
 #endif
 #include "socket.h"
 
+#define DEFAULT_KEY "server.key"
+#define DEFAULT_CRT "server.crt"
+
 socket_function* initServer(socket_option* opt, callback cb, char* msg) {
   int buf = 0, err = 0;
   char* _msg = 0;
@@ -205,7 +208,8 @@ int __bind(socket_function* owner) {
 
   if (opt->ssl_flg == 1) {
     if (owner->mSocket->ssl_st->p_flg == 0) {
-      __load_cert_file(owner, 0, 0, 1, 0);
+      __load_cert_file(owner, _SSLV23_SERVER, 0, 0, 2, DEFAULT_KEY,
+                       DEFAULT_CRT);
     }
   }
 
@@ -219,7 +223,7 @@ SSL* __ssl_bind(socket_function* owner, SOCKET fd) {
   socket_ssl* ssl_st = owner->mSocket->ssl_st;
 
   if (ssl_st->p_flg == 0) {
-    __load_cert_file(owner, 0, 0, 1, 0);
+    __load_cert_file(owner, _SSLV23_SERVER, 0, 0, 2, DEFAULT_KEY, DEFAULT_CRT);
     ssl_st->p_flg = 1;
 
     ssl_st->fds = (socket_ssl_fd*)malloc(sizeof(socket_ssl_fd));
@@ -232,12 +236,12 @@ SSL* __ssl_bind(socket_function* owner, SOCKET fd) {
   if (fd != INVALID_SOCKET) {
     c_ssl = SSL_new(ssl_st->ctx);
     if (c_ssl == NULL) {
-      __sslErr(__FILE__, __LINE__, "SSL_new");
+      __sslErr(__FILE__, __LINE__, __errno(), "SSL_new");
       return 0;
     }
 
     if (!SSL_set_fd(c_ssl, fd)) {
-      __sslErr(__FILE__, __LINE__, "SSL_set_fd");
+      __sslErr(__FILE__, __LINE__, __errno(), "SSL_set_fd");
       goto Err;
     }
 
@@ -248,7 +252,7 @@ SSL* __ssl_bind(socket_function* owner, SOCKET fd) {
     } while (__sslChk(c_ssl, err) == 1);
 
     if (err != 1) {
-      __sslErr(__FILE__, __LINE__, "SSL_accept");
+      __sslErr(__FILE__, __LINE__, __errno(), "SSL_accept");
       goto Err;
     }
   }

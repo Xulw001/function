@@ -71,147 +71,6 @@ int final(socket_function* fun) {
   return 0;
 }
 
-int __sslErr(char* file, int line, char* fun) {
-  unsigned long ulErr = 0;
-  char* pTmp = NULL;
-  char msg[1024];
-  memset(msg, 0x00, sizeof(msg));
-  ulErr = ERR_get_error();
-  pTmp = (char*)ERR_reason_error_string(ulErr);
-  if (pTmp) strncpy(msg, pTmp, 1024);
-  ERR_free_strings();
-#ifdef _DEBUG
-  printf("error appear at %s:%d in %s, errno = %d, message = %s\n", file, line,
-         fun, ulErr, msg);
-#endif
-  return SSL_ERR;
-}
-
-int __sslChk(SSL* ssl, int ret) {
-  int err = SSL_get_error(ssl, ret);
-  switch (err) {
-    case SSL_ERROR_NONE:         // ok
-    case SSL_ERROR_ZERO_RETURN:  // close
-      return 0;
-    case SSL_ERROR_WANT_READ:     // read again
-    case SSL_ERROR_WANT_WRITE:    // write again
-    case SSL_ERROR_WANT_ACCEPT:   // accept again
-    case SSL_ERROR_WANT_CONNECT:  // connect again
-      return 1;
-    default:
-      return -1;
-  }
-}
-
-int __load_cert_file(socket_function* owner, const char* key_file,
-                     const char* cert_file, int sslV, int filev) {
-  const SSL_METHOD* meth;
-  socket_ssl* ssl_st = owner->mSocket->ssl_st;
-#ifdef _WIN32
-  while (RAND_status() == 0)
-    ;
-#endif
-  SSL_library_init();
-  OpenSSL_add_all_algorithms();
-  SSL_load_error_strings();
-  switch (sslV) {
-    case _SSLV23_CLIENT:
-      meth = SSLv23_client_method();
-      break;
-    case _SSLV23_SERVER:
-      meth = SSLv23_server_method();
-      break;
-    case _TLSV1_CLIENT:
-      meth = TLSv1_client_method();
-      break;
-    case _TLSV1_SERVER:
-      meth = TLSv1_server_method();
-      break;
-    case _TLSV11_CLIENT:
-      meth = TLSv1_1_client_method();
-      break;
-    case _TLSV11_SERVER:
-      meth = TLSv1_1_server_method();
-      break;
-    case _TLSV12_CLIENT:
-      meth = TLSv1_2_client_method();
-      break;
-    case _TLSV12_SERVER:
-      meth = TLSv1_2_server_method();
-      break;
-    case _DTLS_CLIENT:
-      meth = DTLS_client_method();
-      break;
-    case _DTLS_SERVER:
-      meth = DTLS_server_method();
-      break;
-    case _DTLSV1_CLIENT:
-      meth = DTLSv1_client_method();
-      break;
-    case _DTLSV1_SERVER:
-      meth = DTLSv1_server_method();
-      break;
-    case _DTLSV12_CLIENT:
-      meth = DTLSv1_2_client_method();
-      break;
-    case _DTLSV12_SERVER:
-      meth = DTLSv1_2_server_method();
-      break;
-  }
-
-  ssl_st->ctx = SSL_CTX_new(meth);
-  if (ssl_st->ctx == NULL) return __sslErr(__FILE__, __LINE__, "SSL_CTX_new");
-
-  long ctx_options = SSL_OP_ALL;
-  ctx_options |= SSL_OP_NO_TICKET;
-  ctx_options |= SSL_OP_NO_COMPRESSION;
-  ctx_options &= ~SSL_OP_NETSCAPE_REUSE_CIPHER_CHANGE_BUG;
-  ctx_options &= ~SSL_OP_DONT_INSERT_EMPTY_FRAGMENTS;
-  ctx_options |= SSL_OP_NO_SSLv2;
-  ctx_options |= SSL_OP_NO_SSLv3;
-
-  SSL_CTX_set_max_proto_version(ssl_st->ctx, 0);
-  SSL_CTX_set_options(ssl_st->ctx, ctx_options);
-  SSL_CTX_set_post_handshake_auth(ssl_st->ctx, 1);
-
-  X509_STORE_set_flags(SSL_CTX_get_cert_store(ssl_st->ctx),
-                       X509_V_FLAG_TRUSTED_FIRST);
-
-  X509_STORE_set_flags(SSL_CTX_get_cert_store(ssl_st->ctx),
-                       X509_V_FLAG_PARTIAL_CHAIN);
-
-  if (key_file && cert_file) {
-    filev = (filev == 0) ? SSL_FILETYPE_PEM : filev;
-
-    if (!SSL_CTX_use_certificate_file(ssl_st->ctx, cert_file, filev))
-      return __sslErr(__FILE__, __LINE__, "SSL_CTX_use_certificate_file");
-
-    if (!SSL_CTX_use_PrivateKey_file(ssl_st->ctx, key_file, filev))
-      return __sslErr(__FILE__, __LINE__, "SSL_CTX_use_PrivateKey_file");
-
-    if (!SSL_CTX_check_private_key(ssl_st->ctx))
-      return __sslErr(__FILE__, __LINE__, "SSL_CTX_check_private_key");
-
-    ssl_st->key_file = key_file;
-    ssl_st->cert_file = cert_file;
-  }
-
-  int verifypeer = 0;  // TODO
-  SSL_CTX_set_verify(ssl_st->ctx,
-                     verifypeer ? SSL_VERIFY_PEER : SSL_VERIFY_NONE, NULL);
-
-  if (sslV % 2) {
-    SSL_CTX_set_session_cache_mode(ssl_st->ctx, SSL_SESS_CACHE_NO_AUTO_CLEAR);
-  } else {
-    SSL_CTX_set_session_cache_mode(
-        ssl_st->ctx, SSL_SESS_CACHE_CLIENT | SSL_SESS_CACHE_NO_INTERNAL_STORE);
-  }
-
-  ssl_st->p_flg = 1;
-
-  return 0;
-}
-
 int __fin(socket_function* owner) {
   int err = 0;
   socket_buff* buff = 0;
@@ -245,7 +104,9 @@ int __close(socket_function* owner, int group, int idx) {
   }
   if (owner->mSocket->ssl_st->fds != NULL) {
     if (owner->mSocket->ssl_st->fds[group].ssl[idx]) {
-      int err = SSL_shutdown(owner->mSocket->ssl_st->fds[group].ssl[idx]);
+      if (SSL_shutdown(owner->mSocket->ssl_st->fds[group].ssl[idx]) != 1) {
+        __sslErr(__FILE__, __LINE__, __errno(), "SSL_shutdown");
+      }
       SSL_free(owner->mSocket->ssl_st->fds[group].ssl[idx]);
       owner->mSocket->ssl_st->fds[group].ssl[idx] = 0x00;
       owner->mSocket->ssl_st->fds[group].p_flg[idx] = 1;

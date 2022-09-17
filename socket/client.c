@@ -132,7 +132,7 @@ int __connect(socket_function* owner) {
 
   if (opt->ssl_flg == 1) {
     if (owner->mSocket->ssl_st->p_flg == 0) {
-      __load_cert_file(owner, 0, 0, 0, 0);
+      __load_cert_file(owner, _SSLV23_CLIENT, 0, 0, 0);
     }
 
     if ((err = __ssl_connect(owner)) != 0) return err;
@@ -146,17 +146,18 @@ int __ssl_connect(socket_function* owner) {
   socket_ssl* ssl_st = owner->mSocket->ssl_st;
 
   ssl_st->ssl = SSL_new(ssl_st->ctx);
-  if (ssl_st->ssl == NULL) return __sslErr(__FILE__, __LINE__, "SSL_new");
+  if (ssl_st->ssl == NULL)
+    return __sslErr(__FILE__, __LINE__, __errno(), "SSL_new");
 
   if (!SSL_set_fd(ssl_st->ssl, owner->mSocket->fd))
-    return __sslErr(__FILE__, __LINE__, "SSL_set_fd");
+    return __sslErr(__FILE__, __LINE__, __errno(), "SSL_set_fd");
 
   SSL_set_connect_state(ssl_st->ssl);
 
   SSL_set_tlsext_host_name(ssl_st->ssl, owner->mSocket->opt.host);
 
   if (SSL_connect(ssl_st->ssl) != 1)
-    return __sslErr(__FILE__, __LINE__, "SSL_connect");
+    return __sslErr(__FILE__, __LINE__, __errno(), "SSL_connect");
 
   ssl_st->p_flg = 2;
   return 0;

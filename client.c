@@ -9,6 +9,9 @@ void client(int flg) {
   char buf[1024] = {0};
   socket_function *cli = initClient(&opt);
 
+  cli->load_cert_file(cli, _SSLV23_CLIENT, _SSL_CA_FILE | _SSL_CLI_VER_PEER, 0,
+                      1, "CA\\ca.crt");
+
   cli->connect(cli);
 
   while (1) {
@@ -19,10 +22,10 @@ void client(int flg) {
       printf("From server: %s\n", buf);
     }
     memset(buf, 0x00, sizeof(buf));
-NEXT:
+  NEXT:
     scanf("%[^\n]", buf);
     scanf("%c", &ch);
-    if(strlen(buf) == 0) goto NEXT;
+    if (strlen(buf) == 0) goto NEXT;
     if (memcmp(buf, "close", 6) == 0) break;
     err = cli->send(cli, buf, strlen(buf));
     if (err == SOCKET_CLOSE || err == SOCKET_DOWN) break;

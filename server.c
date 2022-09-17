@@ -1,7 +1,7 @@
 #define _SOCKET_SERVER
 #include "socket/socket.h"
 
-SSL* handle(socket_function *fun, SOCKET fd, SSL *ssl) {
+SSL *handle(socket_function *fun, SOCKET fd, SSL *ssl) {
   int err;
   char buf[1024];
   memset(buf, 0x00, sizeof(buf));
@@ -35,7 +35,7 @@ void server(int flg) {
   if (flg == 1) msg = "hello, client!";
 
   socket_function *svr = initServer(&opt, handle, msg);
-  svr->load_cert_file(svr, "CA\\server.key", "CA\\server.crt", _SSLV23_SERVER,
-                       0);
+  svr->load_cert_file(svr, _SSLV23_SERVER, 0, 0, 2, "CA\\server.key",
+                      "CA\\server.crt");
   svr->listen(svr);
 }

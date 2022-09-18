@@ -14,25 +14,25 @@ socket_function* initClient(socket_option* opt) {
 
   if ((err = __optchk(opt)) < 0) {
     ERROUT("socket_option", err);
-    return err;
+    return 0;
   }
 
   fun = (socket_function*)malloc(sizeof(socket_function));
   if (fun == 0) {
     ERROUT("malloc", __errno());
-    return MEMORY_ERR;
+    return 0;
   }
 
   mSocket = (socket_base*)malloc(sizeof(socket_base));
   if (mSocket == 0) {
     ERROUT("malloc", __errno());
-    return MEMORY_ERR;
+    return 0;
   }
 
   ssl_st = (socket_ssl*)malloc(sizeof(socket_ssl));
   if (ssl_st == 0) {
     ERROUT("malloc", __errno());
-    return MEMORY_ERR;
+    return 0;
   }
   memset(ssl_st, 0x00, sizeof(socket_ssl));
 
@@ -40,7 +40,7 @@ socket_function* initClient(socket_option* opt) {
     rw = (socket_buff*)malloc(sizeof(socket_buff) + MSGBUF_32K);
     if (rw == 0) {
       ERROUT("malloc", __errno());
-      return MEMORY_ERR;
+      return 0;
     }
     rw->r = 0;
     rw->w = -1;

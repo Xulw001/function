@@ -35,7 +35,7 @@ void server(int flg) {
   if (flg == 1) msg = "hello, client!";
 
   socket_function *svr = initServer(&opt, handle, msg);
-  svr->load_cert_file(svr, _SSLV23_SERVER, 0, 0, 2, "CA\\server.key",
-                      "CA\\server.crt");
+  svr->load_cert_file(svr, _SSLV23_SERVER, _SSL_CA_FILE | _SSL_SVR_VER_PEER_UPPER, 0,
+                      3, "CA\\ca.crt", "CA\\server.key", "CA\\server.crt");
   svr->listen(svr);
 }

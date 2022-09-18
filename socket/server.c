@@ -19,33 +19,33 @@ socket_function* initServer(socket_option* opt, callback cb, char* msg) {
 
   if ((err = __optchk(opt)) < 0) {
     ERROUT("socket_option", err);
-    return err;
+    return 0;
   }
 
   fun = (socket_function*)malloc(sizeof(socket_function));
   if (fun == 0) {
     ERROUT("malloc", __errno());
-    return MEMORY_ERR;
+    return 0;
   }
 
   mSocket = (socket_base*)malloc(sizeof(socket_base));
   if (mSocket == 0) {
     ERROUT("malloc", __errno());
-    return MEMORY_ERR;
+    return 0;
   }
 
   if (opt->ssl_flg == 1) {
     ssl_fd = (socket_ssl_fd*)malloc(sizeof(socket_ssl_fd));
     if (ssl_fd == 0) {
       ERROUT("malloc", __errno());
-      return MEMORY_ERR;
+      return 0;
     }
   }
 
   ssl_st = (socket_ssl*)malloc(sizeof(socket_ssl));
   if (ssl_st == 0) {
     ERROUT("malloc", __errno());
-    return MEMORY_ERR;
+    return 0;
   }
   memset(ssl_st, 0x00, sizeof(socket_ssl));
   ssl_st->fds = ssl_fd;
@@ -54,7 +54,7 @@ socket_function* initServer(socket_option* opt, callback cb, char* msg) {
   fds = (socket_fd*)malloc(sizeof(socket_fd) * CT_NUM);
   if (fds == 0) {
     ERROUT("malloc", __errno());
-    return MEMORY_ERR;
+    return 0;
   }
   for (int i = 0; i < CT_NUM; i++) {
     for (int j = 0; j < MAX_CONNECT; j++) {
@@ -80,7 +80,7 @@ socket_function* initServer(socket_option* opt, callback cb, char* msg) {
     _msg = (char*)malloc(strlen(msg) + 1);
     if (_msg == 0) {
       ERROUT("malloc", __errno());
-      return MEMORY_ERR;
+      return 0;
     }
     strcpy(_msg, msg);
     fun->heloMsg = _msg;

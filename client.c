@@ -10,7 +10,7 @@ void client(int flg) {
   socket_function *cli = initClient(&opt);
 
   cli->load_cert_file(cli, _SSLV23_CLIENT, _SSL_CA_FILE | _SSL_CLI_VER_PEER, 0,
-                      1, "CA\\ca.crt");
+                      3, "CA\\ca.crt", "CA\\server.key", "CA\\server.crt");
 
   cli->connect(cli);
 

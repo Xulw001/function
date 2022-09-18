@@ -1,5 +1,7 @@
 #include "socket.h"
 
+int opt_verify(SSL_VER_OPT* opt, X509_VERIFY_PARAM* vpm);
+
 int __sslErr(char* file, int line, int err, char* fun) {
   unsigned long ulErr = 0;
   char* pTmp = NULL;
@@ -40,13 +42,16 @@ int __load_cert_file(socket_function* owner, int sslV, int verifyCA, int filev,
   int err = 0;
   va_list va;
   int noCAfile = 0;
+  int vpmtouched = 0;
   char* CAfile = 0;
   char* CApath = 0;
   char* cert_file = 0;
   char* key_file = 0;
   char* key_passwd = 0;
+  SSL_VER_OPT* opt = 0;
   int verifypeer = 0;
   const SSL_METHOD* meth;
+  X509_VERIFY_PARAM* vpm = NULL;
   socket_ssl* ssl_st = owner->mSocket->ssl_st;
 #ifdef _WIN32
   while (RAND_status() == 0)
@@ -57,51 +62,35 @@ int __load_cert_file(socket_function* owner, int sslV, int verifyCA, int filev,
   SSL_load_error_strings();
   switch (sslV) {
     case _SSLV23_CLIENT:
+    case _TLSV1_CLIENT:
+    case _TLSV11_CLIENT:
+    case _TLSV12_CLIENT:
       meth = SSLv23_client_method();
       break;
     case _SSLV23_SERVER:
+    case _TLSV1_SERVER:
+    case _TLSV11_SERVER:
+    case _TLSV12_SERVER:
       meth = SSLv23_server_method();
       break;
-    case _TLSV1_CLIENT:
-      meth = TLSv1_client_method();
-      break;
-    case _TLSV1_SERVER:
-      meth = TLSv1_server_method();
-      break;
-    case _TLSV11_CLIENT:
-      meth = TLSv1_1_client_method();
-      break;
-    case _TLSV11_SERVER:
-      meth = TLSv1_1_server_method();
-      break;
-    case _TLSV12_CLIENT:
-      meth = TLSv1_2_client_method();
-      break;
-    case _TLSV12_SERVER:
-      meth = TLSv1_2_server_method();
-      break;
     case _DTLS_CLIENT:
+    case _DTLSV1_CLIENT:
+    case _DTLSV12_CLIENT:
       meth = DTLS_client_method();
       break;
     case _DTLS_SERVER:
-      meth = DTLS_server_method();
-      break;
-    case _DTLSV1_CLIENT:
-      meth = DTLSv1_client_method();
-      break;
     case _DTLSV1_SERVER:
-      meth = DTLSv1_server_method();
-      break;
-    case _DTLSV12_CLIENT:
-      meth = DTLSv1_2_client_method();
-      break;
     case _DTLSV12_SERVER:
-      meth = DTLSv1_2_server_method();
+      meth = DTLS_server_method();
       break;
   }
 
   ssl_st->ctx = SSL_CTX_new(meth);
   if (ssl_st->ctx == NULL)
+    return __sslErr(__FILE__, __LINE__, __errno(), "SSL_CTX_new");
+
+  vpm = X509_VERIFY_PARAM_new();
+  if (vpm == NULL)
     return __sslErr(__FILE__, __LINE__, __errno(), "SSL_CTX_new");
 
   long ctx_options = SSL_OP_ALL;
@@ -116,7 +105,8 @@ int __load_cert_file(socket_function* owner, int sslV, int verifyCA, int filev,
   SSL_CTX_set_options(ssl_st->ctx, ctx_options);
 
   noCAfile = verifyCA & 0xFFFF0000;
-  verifyCA = verifyCA & 0x0000FFFF;
+  vpmtouched = verifyCA & 0x0000FF00;
+  verifyCA = verifyCA & 0x000000FF;
   if (args == 0 && (verifyCA || noCAfile)) return OPT_ERR;
   va_start(va, args);
   switch (noCAfile) {
@@ -133,6 +123,9 @@ int __load_cert_file(socket_function* owner, int sslV, int verifyCA, int filev,
       CApath = va_arg(va, char*);
       args -= 2;
   }
+  if (vpmtouched) {
+    opt = va_arg(va, SSL_VER_OPT*);
+  }
   if (args > 2) {
     key_passwd = va_arg(va, char*);
     args--;
@@ -145,6 +138,16 @@ int __load_cert_file(socket_function* owner, int sslV, int verifyCA, int filev,
     cert_file = va_arg(va, char*);
   }
   va_end(va);
+
+  if (opt != NULL) {
+    if (opt_verify(opt, vpm)) {
+      return SSL_ERR;
+    }
+  }
+
+  if (vpmtouched && !SSL_CTX_set1_param(ssl_st->ctx, vpm)) {
+    return __sslErr(__FILE__, __LINE__, __errno(), "SSL_CTX_set1_param");
+  }
 
   if (cert_file) {
     if (key_passwd) {
@@ -331,5 +334,131 @@ int __load_cert_file(socket_function* owner, int sslV, int verifyCA, int filev,
 
   ssl_st->p_flg = 1;
 
+  return 0;
+}
+
+int opt_verify(SSL_VER_OPT* opt, X509_VERIFY_PARAM* vpm) {
+  int i;
+  ossl_intmax_t t = 0;
+  ASN1_OBJECT* otmp;
+  X509_PURPOSE* xptmp;
+  const X509_VERIFY_PARAM* vtmp;
+
+  if (opt->OPT_V_POLICY) {
+    otmp = OBJ_txt2obj(opt->OPT_V_POLICY, 0);
+    if (otmp == NULL)
+      return __sslErr(__FILE__, __LINE__, __errno(), "OBJ_txt2obj");
+    X509_VERIFY_PARAM_add0_policy(vpm, otmp);
+  }
+  if (opt->OPT_V_PURPOSE) {
+    /* purpose name -> purpose index */
+    i = X509_PURPOSE_get_by_sname(opt->OPT_V_PURPOSE);
+    if (i < 0)
+      return __sslErr(__FILE__, __LINE__, __errno(),
+                      "X509_PURPOSE_get_by_sname");
+    /* purpose index -> purpose object */
+    xptmp = X509_PURPOSE_get0(i);
+    /* purpose object -> purpose value */
+    i = X509_PURPOSE_get_id(xptmp);
+    if (!X509_VERIFY_PARAM_set_purpose(vpm, i))
+      return __sslErr(__FILE__, __LINE__, __errno(),
+                      "X509_VERIFY_PARAM_set_purpose");
+  }
+  if (opt->OPT_V_VERIFY_NAME) {
+    vtmp = X509_VERIFY_PARAM_lookup(opt->OPT_V_VERIFY_NAME);
+    if (vtmp == NULL)
+      return __sslErr(__FILE__, __LINE__, __errno(),
+                      "X509_VERIFY_PARAM_lookup");
+
+    X509_VERIFY_PARAM_set1(vpm, vtmp);
+  }
+  if (opt->OPT_V_VERIFY_DEPTH) {
+    X509_VERIFY_PARAM_set_depth(vpm, opt->OPT_V_VERIFY_DEPTH);
+  }
+  if (opt->OPT_V_VERIFY_AUTH_LEVEL) {
+    X509_VERIFY_PARAM_set_auth_level(vpm, opt->OPT_V_VERIFY_AUTH_LEVEL);
+  }
+  if (opt->OPT_V_ATTIME) {
+    WARNING("opt_verify cause by OPT_V_ATTIME not support");
+  }
+  if (opt->OPT_V_VERIFY_HOSTNAME) {
+    if (!X509_VERIFY_PARAM_set1_host(vpm, opt->OPT_V_VERIFY_HOSTNAME, 0))
+      return __sslErr(__FILE__, __LINE__, __errno(),
+                      "X509_VERIFY_PARAM_set1_host");
+  }
+  if (opt->OPT_V_VERIFY_EMAIL) {
+    if (!X509_VERIFY_PARAM_set1_email(vpm, opt->OPT_V_VERIFY_EMAIL, 0))
+      return __sslErr(__FILE__, __LINE__, __errno(),
+                      "X509_VERIFY_PARAM_set1_email");
+  }
+  if (opt->OPT_V_VERIFY_IP) {
+    if (!X509_VERIFY_PARAM_set1_ip_asc(vpm, opt->OPT_V_VERIFY_IP))
+      return __sslErr(__FILE__, __LINE__, __errno(),
+                      "X509_VERIFY_PARAM_set1_ip_asc");
+  }
+  if (opt->OPT_V_IGNORE_CRITICAL) {
+    X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_IGNORE_CRITICAL);
+  }
+  if (opt->OPT_V_ISSUER_CHECKS) {
+    ; /* NOP, deprecated */
+  }
+  if (opt->OPT_V_CRL_CHECK) {
+    X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_CRL_CHECK);
+  }
+  if (opt->OPT_V_CRL_CHECK_ALL) {
+    X509_VERIFY_PARAM_set_flags(
+        vpm, X509_V_FLAG_CRL_CHECK | X509_V_FLAG_CRL_CHECK_ALL);
+  }
+  if (opt->OPT_V_POLICY_CHECK) {
+    X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_POLICY_CHECK);
+  }
+  if (opt->OPT_V_EXPLICIT_POLICY) {
+    X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_EXPLICIT_POLICY);
+  }
+  if (opt->OPT_V_INHIBIT_ANY) {
+    X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_INHIBIT_ANY);
+  }
+  if (opt->OPT_V_INHIBIT_MAP) {
+    X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_INHIBIT_MAP);
+  }
+  if (opt->OPT_V_X509_STRICT) {
+    X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_X509_STRICT);
+  }
+  if (opt->OPT_V_EXTENDED_CRL) {
+    X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_EXTENDED_CRL_SUPPORT);
+  }
+  if (opt->OPT_V_USE_DELTAS) {
+    X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_USE_DELTAS);
+  }
+  if (opt->OPT_V_POLICY_PRINT) {
+    X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_NOTIFY_POLICY);
+  }
+  if (opt->OPT_V_CHECK_SS_SIG) {
+    X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_CHECK_SS_SIGNATURE);
+  }
+  if (opt->OPT_V_TRUSTED_FIRST) {
+    X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_TRUSTED_FIRST);
+  }
+  if (opt->OPT_V_SUITEB_128_ONLY) {
+    X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_SUITEB_128_LOS_ONLY);
+  }
+  if (opt->OPT_V_SUITEB_128) {
+    X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_SUITEB_128_LOS);
+  }
+  if (opt->OPT_V_SUITEB_192) {
+    X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_SUITEB_192_LOS);
+  }
+  if (opt->OPT_V_PARTIAL_CHAIN) {
+    X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_PARTIAL_CHAIN);
+  }
+  if (opt->OPT_V_NO_ALT_CHAINS) {
+    X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_NO_ALT_CHAINS);
+  }
+  if (opt->OPT_V_NO_CHECK_TIME) {
+    X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_NO_CHECK_TIME);
+  }
+  if (opt->OPT_V_ALLOW_PROXY_CERTS) {
+    X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_ALLOW_PROXY_CERTS);
+  }
   return 0;
 }

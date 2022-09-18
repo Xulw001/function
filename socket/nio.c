@@ -1,9 +1,9 @@
 #ifndef _SOCKET_SERVER
 #define _SOCKET_SERVER
 #endif
+#include "socket.h"
 #include "../thread/lock.h"
 #include "../thread/pool.h"
-#include "socket.h"
 
 static unsigned int lock_socket = FREE;
 
@@ -214,7 +214,7 @@ u_int __stdcall __bio_commucation(void* params)
         continue;
       }
 #ifdef _WIN32
-      _InterlockedIncrement(&mSocket->client[para->group].st[i].tasknum);
+      _InterlockedIncrement((unsigned long*)&mSocket->client[para->group].st[i].tasknum);
 #else
       __sync_fetch_and_add(&mSocket->client[para->group].st[i].tasknum, 1);
 #endif

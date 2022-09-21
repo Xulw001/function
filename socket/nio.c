@@ -5,8 +5,6 @@
 #include "../thread/lock.h"
 #include "../thread/pool.h"
 
-static unsigned int lock_socket = FREE;
-
 typedef struct {
   socket_function* owner;
   int group;
@@ -64,10 +62,10 @@ NEXT:
                   ERROUT("SSL_bind", __errno());
                   goto NEXT;
                 }
-                lock(&lock_socket);
+                lock(&mSocket->client[i].st[j].tasklock);
                 mSocket->ssl_st->fds[i].ssl[j] = cssl;
                 mSocket->ssl_st->fds[i].p_flg[j] = 2;
-                unlock(&lock_socket);
+                unlock(&mSocket->client[i].st[j].tasklock);
 
                 if (owner->heloMsg) {
                 Retry_SSL:
@@ -99,13 +97,12 @@ NEXT:
                   };
                 }
               }
-              lock(&lock_socket);
+              lock(&mSocket->client[i].st[j].tasklock);
               mSocket->client[i].st[j].fd = cfd;
               mSocket->client[i].st[j].shutdown = 0;
               mSocket->client[i].st[j].tasknum = 0;
-              mSocket->client[i].st[j].tasklock = 0;
               mSocket->client[i].use++;
-              unlock(&lock_socket);
+              unlock(&mSocket->client[i].st[j].tasklock);
               sFind = i;
               goto Find;
             }
@@ -214,7 +211,8 @@ u_int __stdcall __bio_commucation(void* params)
         continue;
       }
 #ifdef _WIN32
-      _InterlockedIncrement((unsigned long*)&mSocket->client[para->group].st[i].tasknum);
+      _InterlockedIncrement(
+          (unsigned long*)&mSocket->client[para->group].st[i].tasknum);
 #else
       __sync_fetch_and_add(&mSocket->client[para->group].st[i].tasknum, 1);
 #endif
@@ -244,17 +242,7 @@ int __bio_sub_commucation(int* final, void* params) {
   mSocket = para->owner->mSocket;
   fd = mSocket->client[para->group].st[para->idx].fd;
 
-#ifdef _WIN32
-  while (
-      _InterlockedCompareExchange(
-          (unsigned long*)&mSocket->client[para->group].st[para->idx].tasklock,
-          1, 0) == 1)
-    ;
-#else
-  while (__sync_bool_compare_and_swap(
-             &mSocket->client[para->group].st[para->idx].tasklock, 0, 1) == 0)
-    ;
-#endif
+  lock(&mSocket->client[para->group].st[para->idx].tasklock);
 
   if (mSocket->client[para->group].st[para->idx].shutdown == 1) {
     goto END;
@@ -285,19 +273,8 @@ int __bio_sub_commucation(int* final, void* params) {
       err = recv(fd, buf, sizeof(buf), MSG_PEEK);
       if (err == 0) {
       Close:
-        lock(&lock_socket);
         __close(para->owner, para->group, para->idx);
-        unlock(&lock_socket);
-
-#ifdef _WIN32
-        _InterlockedExchange((unsigned long*)&mSocket->client[para->group]
-                                 .st[para->idx]
-                                 .shutdown,
-                             1);
-#else
-        __sync_lock_test_and_set(
-            &mSocket->client[para->group].st[para->idx].shutdown, 1);
-#endif
+        mSocket->client[para->group].st[para->idx].shutdown = 1;
         break;
       } else if (err < 0) {
         err = __errno();
@@ -319,14 +296,11 @@ int __bio_sub_commucation(int* final, void* params) {
   }
 
 END:
+  unlock(&mSocket->client[para->group].st[para->idx].tasklock);
 #ifdef _WIN32
-  _InterlockedExchange(
-      (unsigned long*)&mSocket->client[para->group].st[para->idx].tasklock, 0);
   _InterlockedDecrement(
       (unsigned long*)&mSocket->client[para->group].st[para->idx].tasknum);
 #else
-  __sync_lock_test_and_set(&mSocket->client[para->group].st[para->idx].tasklock,
-                           0);
   __sync_fetch_and_sub(&mSocket->client[para->group].st[para->idx].tasknum, 1);
 #endif
 

@@ -1,6 +1,6 @@
 #pragma once
 
-enum STATUS { LOCK, FREE };
+enum STATUS { FREE, LOCK };
 
 #ifdef __cplusplus
 extern "C" {

@@ -288,6 +288,7 @@ int __load_cert_file(socket_function* owner, int sslV, int verifyCA, int filev,
     } else if (noCAfile == _SSL_CA_DEFAULT) {
       SSL_CTX_set_default_verify_paths(ssl_st->ctx);
     } else {
+#ifdef _OPENSSL_V3
       if (CAfile && !SSL_CTX_load_verify_file(ssl_st->ctx, CAfile))
         /* Fail if we insist on successfully verifying the server. */
         return __sslErr(__FILE__, __LINE__, __errno(),
@@ -297,6 +298,12 @@ int __load_cert_file(socket_function* owner, int sslV, int verifyCA, int filev,
         /* Fail if we insist on successfully verifying the server. */
         return __sslErr(__FILE__, __LINE__, __errno(),
                         "SSL_CTX_load_verify_dir");
+#else
+      if ((CAfile || CApath) && !SSL_CTX_load_verify_locations(ssl_st->ctx, CAfile, CApath))
+        /* Fail if we insist on successfully verifying the server. */
+        return __sslErr(__FILE__, __LINE__, __errno(),
+                        "SSL_CTX_load_verify_locations");
+#endif
     }
     X509_STORE_set_flags(SSL_CTX_get_cert_store(ssl_st->ctx),
                          X509_V_FLAG_TRUSTED_FIRST);

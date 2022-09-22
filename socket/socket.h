@@ -17,7 +17,7 @@
 #include <openssl/ossl_typ.h>
 #include <openssl/rand.h>
 #include <openssl/ssl.h>
-#include <openssl/x509.h>
+#include <openssl/x509v3.h>
 #ifdef _DEBUG
 #include <stdio.h>
 #endif
@@ -29,11 +29,14 @@ typedef struct addrinfo ADDRINFOT;
 #endif
 
 #ifndef MAX_CONNECT
-#define MAX_CONNECT 64
+#ifdef _WIN32
+#define FD_SETSIZE 1024
+#endif
+#define MAX_CONNECT 1024
 #endif
 
 #ifndef CT_NUM
-#define CT_NUM (1)
+#define CT_NUM (8)
 #endif
 
 #ifndef BACKLOG
@@ -65,15 +68,16 @@ typedef enum {
 typedef enum {
   SOCKET_CLOSE = -99,
   SOCKET_DOWN,
-  IO_ERR = -9,  //
-  MEMORY_ERR,   //
-  SSL_ERR,      //
-  SELECT_ERR,   //
-  BIND_ERR,     //
-  CONNECT_ERR,  //
-  STATE_ERR,    //
-  WAS_ERR,      //
-  OPT_ERR       // hostname exception
+  EPOLL_ERR = -10,  //
+  IO_ERR,           //
+  MEMORY_ERR,       //
+  SSL_ERR,          //
+  SELECT_ERR,       //
+  BIND_ERR,         //
+  CONNECT_ERR,      //
+  STATE_ERR,        //
+  WAS_ERR,          //
+  OPT_ERR           // hostname exception
 } InterError;
 
 typedef enum {
@@ -102,13 +106,13 @@ typedef enum {
 } SSL_VERIFY;
 
 typedef struct {
-  char *OPT_V_POLICY;
-  char *OPT_V_PURPOSE;
-  char *OPT_V_VERIFY_NAME;
-  char *OPT_V_ATTIME;
-  char *OPT_V_VERIFY_HOSTNAME;
-  char *OPT_V_VERIFY_EMAIL;
-  char *OPT_V_VERIFY_IP;
+  char* OPT_V_POLICY;
+  char* OPT_V_PURPOSE;
+  char* OPT_V_VERIFY_NAME;
+  char* OPT_V_ATTIME;
+  char* OPT_V_VERIFY_HOSTNAME;
+  char* OPT_V_VERIFY_EMAIL;
+  char* OPT_V_VERIFY_IP;
   char OPT_V_VERIFY_DEPTH;
   char OPT_V_VERIFY_AUTH_LEVEL;
   char OPT_V_IGNORE_CRITICAL;

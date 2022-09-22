@@ -11,10 +11,10 @@ typedef struct {
   int final;
 } paramter;
 
-int __bio_listen(socket_function* owner) {
+int __nio_listen(socket_function* owner) {
   int err;
   fd_set fds;
-  int nfds, sFind;
+  int nfds, sFind, option;
   SSL* cssl;
   SOCKET cfd;
   struct timeval tvTimeOut;
@@ -56,10 +56,23 @@ NEXT:
         if (mSocket->client[i].use < MAX_CONNECT) {
           for (int j = 0; j < MAX_CONNECT; j++) {
             if (mSocket->client[i].st[j].fd == INVALID_SOCKET) {
+              option = 1;
+#ifndef _WIN32
+              if (ioctl(cfd, FIONBIO, &option))
+#else
+              if (ioctlsocket(cfd, FIONBIO, &option))
+#endif
+              {
+                ERROUT("ioctl", __errno());
+                __close(owner, i, j);
+                goto NEXT;
+              }
+
               if (mSocket->opt.ssl_flg != 0) {
                 cssl = __ssl_bind(owner, cfd);
                 if (cssl == 0) {
                   ERROUT("SSL_bind", __errno());
+                  __close(owner, i, j);
                   goto NEXT;
                 }
                 lock(&mSocket->client[i].st[j].tasklock);
@@ -125,10 +138,10 @@ NEXT:
         para[sFind].owner = owner;
         para[sFind].final = 0;
 #ifndef _WIN32
-        if (pthread_create(&threads[sFind], NULL, __bio_commucation,
+        if (pthread_create(&threads[sFind], NULL, __nio_commucation,
                            (void*)&para[sFind]) != 0)
 #else
-        if ((threads[sFind] = _beginthreadex(NULL, 0, __bio_commucation,
+        if ((threads[sFind] = _beginthreadex(NULL, 0, __nio_commucation,
                                              (void*)&para[sFind], 0, 0)) == 0)
 #endif
         {
@@ -148,9 +161,9 @@ typedef struct {
 } SocketParamter;
 
 #ifndef _WIN32
-u_int __bio_commucation(void* params)
+u_int __nio_commucation(void* params)
 #else
-u_int __stdcall __bio_commucation(void* params)
+u_int __stdcall __nio_commucation(void* params)
 #endif
 {
   int err;
@@ -221,7 +234,7 @@ u_int __stdcall __bio_commucation(void* params)
       sockpara->group = para->group;
       sockpara->idx = i;
       sockpara->owner = para->owner;
-      err = addTaskPool(pool, __bio_sub_commucation, sockpara, 0);
+      err = addTaskPool(pool, __nio_sub_commucation, sockpara, 0);
       if (err < 0) {
         ERROUT("addTaskPool", err);
         continue;
@@ -231,7 +244,7 @@ u_int __stdcall __bio_commucation(void* params)
   return 0;
 }
 
-int __bio_sub_commucation(int* final, void* params) {
+int __nio_sub_commucation(int* final, void* params) {
   int err = 0;
   SSL* ssl = 0;
   SOCKET fd = 0;

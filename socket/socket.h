@@ -3,14 +3,11 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #else
-#include <errno.h>
 #include <netdb.h>
 #include <netinet/tcp.h>
 #include <signal.h>
 #include <string.h>
 #include <sys/ioctl.h>
-#include <sys/socket.h>
-#include <sys/types.h>
 #include <unistd.h>
 #endif
 #include <openssl/err.h>
@@ -241,13 +238,13 @@ int __sslChk(SSL* ssl_st, int ret);
 
 int __bio_read(socket_base* socket, char* buf, int size);
 int __bio_write(socket_base* socket, char* buf, int size);
-int __bio_listen(socket_function* owner);
+int __nio_listen(socket_function* owner);
 #ifndef _WIN32
-u_int __bio_commucation(void* params);
+u_int __nio_commucation(void* params);
 #else
-u_int __stdcall __bio_commucation(void* params);
+u_int __stdcall __nio_commucation(void* params);
 #endif
-int __bio_sub_commucation(int* final, void* params);
+int __nio_sub_commucation(int* final, void* params);
 
 #ifdef _DEBUG
 #ifndef ERROUT

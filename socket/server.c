@@ -69,7 +69,7 @@ socket_function* initServer(socket_option* opt, callback cb, char* msg) {
   fun->mSocket = mSocket;
   fun->callback = cb;
   fun->heloMsg = 0;
-  fun->listen = __bio_listen;
+  fun->listen = __nio_listen;
   fun->fin = __fin;
   fun->send = __send;
   fun->recv = __recv;

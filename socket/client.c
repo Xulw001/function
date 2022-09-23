@@ -59,7 +59,8 @@ socket_function* initClient(socket_option* opt) {
   mSocket->state = _CS_IDLE;
   mSocket->buf = rw;
   mSocket->ssl_st = ssl_st;
-  mSocket->client = 0x00;
+  mSocket->cli_fd = 0x00;
+  mSocket->ev_fd = 0x00;
   mSocket->opt.host = (char*)malloc(strlen(opt->host) + 1);
   strcpy(mSocket->opt.host, opt->host);
 #ifndef _WIN32
@@ -163,7 +164,7 @@ int __ssl_connect(socket_function* owner) {
   return 0;
 }
 
-int __send(socket_function* owner, const char* buf, int length) {
+int __send(socket_function* owner, char* buf, int length) {
   int offset = 0, err = 0;
   socket_buff* mBuf = 0;
 
@@ -210,7 +211,7 @@ int __send(socket_function* owner, const char* buf, int length) {
   return length;
 }
 
-int __recv(socket_function* owner, const char* buf, int length) {
+int __recv(socket_function* owner, char* buf, int length) {
   int offset = 0, err = 0;
   socket_buff* mBuf = 0;
 

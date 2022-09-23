@@ -13,6 +13,7 @@ socket_function* initServer(socket_option* opt, callback cb, char* msg) {
   socket_base* mSocket = 0;
   socket_ssl* ssl_st = 0;
   socket_fd* fds = 0;
+  epoll_fd* ev = 0;
   socket_ssl_fd* ssl_fd = 0;
 
   opt->timeout = opt->timeout ? opt->timeout : 30;
@@ -51,25 +52,35 @@ socket_function* initServer(socket_option* opt, callback cb, char* msg) {
   ssl_st->fds = ssl_fd;
   ssl_st->p_flg = 0;
 
-  fds = (socket_fd*)malloc(sizeof(socket_fd) * CT_NUM);
-  if (fds == 0) {
-    ERROUT("malloc", __errno());
-    return 0;
-  }
-  for (int i = 0; i < CT_NUM; i++) {
-    for (int j = 0; j < MAX_CONNECT; j++) {
-      fds[i].st[j].fd = INVALID_SOCKET;
-      fds[i].st[j].shutdown = 0;
-      fds[i].st[j].tasklock = 0;
-      fds[i].st[j].tasknum = 0;
+  if (opt->aio_flg) {
+    ev = (epoll_fd*)malloc(sizeof(epoll_fd) * CT_NUM);
+    if (ev == 0) {
+      ERROUT("malloc", __errno());
+      return 0;
     }
-    fds[i].use = 0;
+    memset(ev, 0x00, sizeof(epoll_fd) * CT_NUM);
+  } else {
+    fds = (socket_fd*)malloc(sizeof(socket_fd) * CT_NUM);
+    if (fds == 0) {
+      ERROUT("malloc", __errno());
+      return 0;
+    }
+    for (int i = 0; i < CT_NUM; i++) {
+      for (int j = 0; j < MAX_CONNECT; j++) {
+        fds[i].st[j].fd = INVALID_SOCKET;
+        fds[i].st[j].status = 0;
+        fds[i].st[j].tasklock = 0;
+        fds[i].st[j].tasknum = 0;
+      }
+      fds[i].use = 0;
+    }
   }
 
   fun->mSocket = mSocket;
+  fun->pool = 0;
   fun->callback = cb;
   fun->heloMsg = 0;
-  fun->listen = __nio_listen;
+  fun->listen = __nio_accept;
   fun->fin = __fin;
   fun->send = __send;
   fun->recv = __recv;
@@ -90,7 +101,8 @@ socket_function* initServer(socket_option* opt, callback cb, char* msg) {
   mSocket->fd = INVALID_SOCKET;
   mSocket->state = _CS_IDLE;
   mSocket->buf = NULL;
-  mSocket->client = fds;
+  mSocket->cli_fd = fds;
+  mSocket->ev_fd = ev;
   mSocket->ssl_st = ssl_st;
   if (opt->host) {
     mSocket->opt.host = (char*)malloc(strlen(opt->host) + 1);
@@ -159,6 +171,18 @@ int __bind(socket_function* owner) {
     ERROUT("setsockopt", __errno());
     return BIND_ERR;
   }
+
+#ifndef _WIN32
+  if (opt->aio_flg == 1) {
+    optlen = sizeof(option);
+    option = 1;
+    if ((setsockopt(mSocket->fd, SOL_SOCKET, SO_REUSEPORT, &option, optlen)) !=
+        0) {
+      ERROUT("setsockopt", __errno());
+      return BIND_ERR;
+    }
+  }
+#endif
 
   if (opt->nag_flg == 1) {
     optlen = sizeof(option);

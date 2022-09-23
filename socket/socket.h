@@ -1,14 +1,15 @@
 #pragma once
-#ifdef _WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#else
+#ifndef _WIN32
 #include <netdb.h>
 #include <netinet/tcp.h>
 #include <signal.h>
 #include <string.h>
+#include <sys/epoll.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
+#else
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #endif
 #include <openssl/err.h>
 #include <openssl/ossl_typ.h>
@@ -27,6 +28,7 @@ typedef struct addrinfo ADDRINFOT;
 
 #ifndef MAX_CONNECT
 #ifdef _WIN32
+#undef FD_SETSIZE
 #define FD_SETSIZE 1024
 #endif
 #define MAX_CONNECT 1024
@@ -161,7 +163,7 @@ typedef struct {
 
 typedef struct {
   SOCKET fd;
-  int shutdown;
+  int status;
   int tasknum;
   int tasklock;
 } socket_st;
@@ -170,6 +172,10 @@ typedef struct {
   int use;
   socket_st st[MAX_CONNECT];
 } socket_fd;
+
+typedef struct {
+  void* s;  // struct epoll_event ev[MAX_CONNECT];
+} epoll_fd;
 
 typedef struct {
   SSL* ssl[MAX_CONNECT];
@@ -194,23 +200,25 @@ typedef struct {
   socket_option opt;
   socket_buff* buf;
   socket_ssl* ssl_st;
-  socket_fd* client;
+  socket_fd* cli_fd;
+  epoll_fd* ev_fd;
 } socket_base;
 
 typedef struct {
   socket_base* mSocket;
   int (*fin)(void*);
-  int (*send)(void*, const char*, int);
-  int (*recv)(void*, const char*, int);
+  int (*send)(void*, char*, int);
+  int (*recv)(void*, char*, int);
   int (*load_cert_file)(void*, int, int, int, int, ...);
 #ifndef _SOCKET_SERVER
   int (*connect)(void*);
   int (*ssl_connect)(void*);
 #else
-  char* heloMsg;
+  struct thread_pool* pool;
   SSL* (*callback)(void*, SOCKET, SSL*);
   int (*listen)(void*);
   SSL* (*ssl_bind)(void*, SOCKET fd);
+  char* heloMsg;
 #endif
 } socket_function;
 
@@ -220,8 +228,8 @@ int final(socket_function* fun);
 int __connect(socket_function* owner);
 int __close(socket_function* owner, int group, int idx);
 int __fin(socket_function* owner);
-int __send(socket_function* owner, const char* buf, int size);
-int __recv(socket_function* owner, const char* buf, int size);
+int __send(socket_function* owner, char* buf, int size);
+int __recv(socket_function* owner, char* buf, int size);
 int __load_cert_file(socket_function* owner, int sslV, int verifyCA, int filev,
                      int args, ...);
 int __bind(socket_function* owner);
@@ -238,13 +246,7 @@ int __sslChk(SSL* ssl_st, int ret);
 
 int __bio_read(socket_base* socket, char* buf, int size);
 int __bio_write(socket_base* socket, char* buf, int size);
-int __nio_listen(socket_function* owner);
-#ifndef _WIN32
-u_int __nio_commucation(void* params);
-#else
-u_int __stdcall __nio_commucation(void* params);
-#endif
-int __nio_sub_commucation(int* final, void* params);
+int __nio_accept(socket_function* owner);
 
 #ifdef _DEBUG
 #ifndef ERROUT

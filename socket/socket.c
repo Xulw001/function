@@ -113,15 +113,19 @@ int __close(socket_function* owner, int group, int idx) {
     }
   }
 
-  if (owner->mSocket->client != NULL) {
-    if (owner->mSocket->client[group].st[idx].fd != INVALID_SOCKET) {
+  if (owner->mSocket->cli_fd != NULL) {
+    if (owner->mSocket->cli_fd[group].st[idx].fd != INVALID_SOCKET) {
 #ifndef _WIN32
-      close(owner->mSocket->client[group].st[idx].fd);
+      close(owner->mSocket->cli_fd[group].st[idx].fd);
 #else
-      closesocket(owner->mSocket->client[group].st[idx].fd);
+      closesocket(owner->mSocket->cli_fd[group].st[idx].fd);
 #endif
-      owner->mSocket->client[group].st[idx].fd = INVALID_SOCKET;
-      owner->mSocket->client[group].use--;
+      owner->mSocket->cli_fd[group].st[idx].fd = INVALID_SOCKET;
+#ifdef _WIN32
+      _InterlockedDecrement((unsigned long*)&owner->mSocket->cli_fd[group].use);
+#else
+      __sync_fetch_and_sub(&owner->mSocket->cli_fd[group].use, 1);
+#endif
     }
   }
 
@@ -155,8 +159,8 @@ int __close0(socket_function* owner) {
   if (owner->mSocket->ssl_st->ctx != NULL)
     SSL_CTX_free(owner->mSocket->ssl_st->ctx);
 
-  if (owner->mSocket->client != NULL) {
-    socket_fd* pfd = owner->mSocket->client;
+  if (owner->mSocket->cli_fd != NULL) {
+    socket_fd* pfd = owner->mSocket->cli_fd;
     for (int i = 0; i < CT_NUM; i++) {
       if (pfd->use == 0) continue;
       for (int k = 0; k < MAX_CONNECT; k++) {
@@ -170,7 +174,7 @@ int __close0(socket_function* owner) {
         }
       }
     }
-    owner->mSocket->client = 0x00;
+    owner->mSocket->cli_fd = 0x00;
   }
 
   if (owner->mSocket->fd != INVALID_SOCKET) {

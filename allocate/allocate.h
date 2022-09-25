@@ -34,15 +34,10 @@ extern "C" {
 void createHeapManage();
 void destoryHeapManage();
 void *_allocate(unsigned int ulAreaSize, unsigned int tid);
-void _release(void *ptr);
+void _release(void *ptr, int size);
 
-
-#ifndef _MulThread
 #define allocate(size) _allocate(size, 0);
-#else
-#define allocate(size, tid) _allocate(size, tid);
-#endif
-#define release(ptr) _release(ptr);
+#define release(ptr) _release(ptr, 0);
 
 #ifdef __cplusplus
 }

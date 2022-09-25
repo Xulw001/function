@@ -60,7 +60,6 @@ socket_function* initClient(socket_option* opt) {
   mSocket->buf = rw;
   mSocket->ssl_st = ssl_st;
   mSocket->cli_fd = 0x00;
-  mSocket->ev_fd = 0x00;
   mSocket->opt.host = (char*)malloc(strlen(opt->host) + 1);
   strcpy(mSocket->opt.host, opt->host);
 #ifndef _WIN32

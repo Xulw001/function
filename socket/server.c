@@ -13,7 +13,6 @@ socket_function* initServer(socket_option* opt, callback cb, char* msg) {
   socket_base* mSocket = 0;
   socket_ssl* ssl_st = 0;
   socket_fd* fds = 0;
-  epoll_fd* ev = 0;
   socket_ssl_fd* ssl_fd = 0;
 
   opt->timeout = opt->timeout ? opt->timeout : 30;
@@ -52,14 +51,7 @@ socket_function* initServer(socket_option* opt, callback cb, char* msg) {
   ssl_st->fds = ssl_fd;
   ssl_st->p_flg = 0;
 
-  if (opt->aio_flg) {
-    ev = (epoll_fd*)malloc(sizeof(epoll_fd) * CT_NUM);
-    if (ev == 0) {
-      ERROUT("malloc", __errno());
-      return 0;
-    }
-    memset(ev, 0x00, sizeof(epoll_fd) * CT_NUM);
-  } else {
+  if (!opt->aio_flg) {
     fds = (socket_fd*)malloc(sizeof(socket_fd) * CT_NUM);
     if (fds == 0) {
       ERROUT("malloc", __errno());
@@ -102,7 +94,6 @@ socket_function* initServer(socket_option* opt, callback cb, char* msg) {
   mSocket->state = _CS_IDLE;
   mSocket->buf = NULL;
   mSocket->cli_fd = fds;
-  mSocket->ev_fd = ev;
   mSocket->ssl_st = ssl_st;
   if (opt->host) {
     mSocket->opt.host = (char*)malloc(strlen(opt->host) + 1);

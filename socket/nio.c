@@ -245,7 +245,7 @@ int __nio_accept(socket_function* owner) {
 
   if ((err = createPool(&owner->pool, 0, 0)) != 0) {
     ERROUT("createPool", err);
-    return 0;
+    return POOL_ERR;
   }
 
 NEXT:

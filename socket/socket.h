@@ -29,9 +29,9 @@ typedef struct addrinfo ADDRINFOT;
 #ifndef MAX_CONNECT
 #ifdef _WIN32
 #undef FD_SETSIZE
-#define FD_SETSIZE 1024
+#define FD_SETSIZE 512
 #endif
-#define MAX_CONNECT 1024
+#define MAX_CONNECT 512
 #endif
 
 #ifndef CT_NUM
@@ -67,16 +67,17 @@ typedef enum {
 typedef enum {
   SOCKET_CLOSE = -99,
   SOCKET_DOWN,
-  EPOLL_ERR = -10,  //
-  IO_ERR,           //
-  MEMORY_ERR,       //
-  SSL_ERR,          //
-  SELECT_ERR,       //
-  BIND_ERR,         //
-  CONNECT_ERR,      //
-  STATE_ERR,        //
-  WAS_ERR,          //
-  OPT_ERR           // hostname exception
+  POOL_ERR = -11,  //
+  EPOLL_ERR,       //
+  IO_ERR,          //
+  MEMORY_ERR,      //
+  SSL_ERR,         //
+  SELECT_ERR,      //
+  BIND_ERR,        //
+  CONNECT_ERR,     //
+  STATE_ERR,       //
+  WAS_ERR,         //
+  OPT_ERR          // hostname exception
 } InterError;
 
 typedef enum {
@@ -174,10 +175,6 @@ typedef struct {
 } socket_fd;
 
 typedef struct {
-  void* s;  // struct epoll_event ev[MAX_CONNECT];
-} epoll_fd;
-
-typedef struct {
   SSL* ssl[MAX_CONNECT];
   char p_flg[MAX_CONNECT];  // 0:prepare 1:ready 2:complete
 } socket_ssl_fd;
@@ -201,7 +198,6 @@ typedef struct {
   socket_buff* buf;
   socket_ssl* ssl_st;
   socket_fd* cli_fd;
-  epoll_fd* ev_fd;
 } socket_base;
 
 typedef struct {

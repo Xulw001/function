@@ -28,6 +28,10 @@ struct allocate {
   struct allocate *next;
 };
 
+struct HeapList {
+  struct allocate *next[8];
+};
+
 struct HeapBlock {
   struct list_head list;
   struct HeapLock *lock;
@@ -35,8 +39,8 @@ struct HeapBlock {
 
 struct HeapInstance {
   struct list_head head;
+  struct HeapList *list;
   struct allocate *lock;
-  int lock_num, lock_size;
 };
 
 #define BLOCKPAGE (1024 * 128)
@@ -70,10 +74,10 @@ int _allocate_lock_free() {
 #ifdef _WIN32
     if (_InterlockedCompareExchange((unsigned long *)&_instance->lock, 0, 0) !=
         0)
-    //����lock_t��ʼֵ
+    //返回lock_t初始值
 #else
     if (__sync_bool_compare_and_swap(&_instance->lock, 0, 0) ==
-        0)  //д����ֵ�ɹ�����1��д��ʧ�ܷ���0
+        0)  //写入新值成功返回1，写入失败返回0
 #endif
       return 1;
 #ifdef _WIN32

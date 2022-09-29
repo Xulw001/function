@@ -6,6 +6,7 @@ enum STATUS { FREE, LOCK };
 extern "C" {
 #endif
 void lock(unsigned int*);
+int islock(unsigned int*);
 void unlock(unsigned int*);
 #ifdef __cplusplus
 }

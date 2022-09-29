@@ -7,7 +7,7 @@ extern "C" {
 #endif
 int createHeapManage();
 int destoryHeapManage();
-void *_allocate(unsigned int ulAreaSize, unsigned int tid);
+void *_allocate(unsigned int ulAreaSize);
 void _release(void *ptr, int size);
 
 #define allocate(size) _allocate(size);

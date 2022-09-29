@@ -16,16 +16,17 @@
 
 struct HeapLock {
   void *ptr;
+  struct HeapLock *next;
   unsigned int lock;
+};
+
+struct allocate {
+  struct allocate *next;
 };
 
 struct HeapInf {
   unsigned int unMem_flg;
   unsigned int unMem_size;
-};
-
-struct allocate {
-  struct allocate *next;
 };
 
 struct HeapBlock {
@@ -36,14 +37,16 @@ struct HeapBlock {
 struct HeapInstance {
   struct list_head head;
   struct allocate *lock;
-  int lock_num, lock_size;
+  unsigned int lock_allocate;
 };
+
+#define BLOCKSIZE sizeof(struct HeapBlock);
 
 #define BLOCKPAGE (1024 * 128)
 #define BLOCKSEP (1024 * 64)
+#define BLOCKLOCK(n) (n + sizeof(struct HeapBlock) + sizeof(struct HeapInf) * 2)
 // #define MINIPAGE 1024
-
-#define LOCK_SIZE 128
+#define LOCK_SIZE 16
 
 #define ALLOCATE_ALL_BLOCK 0xFFFFFFFF    // all for block
 #define ALLOCATE_SEP_BLOCK 0xEEEEEEEE    // for floated block
@@ -55,14 +58,6 @@ struct HeapInstance {
   ((len + sizeof(void *) - 1) / sizeof(void *) * sizeof(void *))
 
 static struct HeapInstance *_instance;
-static unsigned int lock_allocate = FREE;
-
-#define list_add_tail_safe(ptr, list) \
-  {                                   \
-    lock(&lock_allocate);             \
-    list_add_tail(ptr, list);         \
-    unlock(&lock_allocate);           \
-  }
 
 int _allocate_lock_free() {
   int lock = 0;
@@ -85,10 +80,10 @@ int _allocate_lock_free() {
   return 0;
 }
 
-struct allocate *_allocate_lock() {
-  void *pReturn_code = NULL;
+struct HeapLock *_allocate_lock() {
+  struct HeapLock *pReturn_code = NULL;
   struct HeapInf *pHeapInf = NULL;
-  lock(&lock_allocate);
+  lock(&_instance->lock_allocate);
   pReturn_code = _instance->lock;
   if (_instance->lock->next == -1) {
     pHeapInf = (char *)_instance - sizeof(struct HeapInf);
@@ -100,14 +95,18 @@ struct allocate *_allocate_lock() {
   } else {
     _instance->lock = _instance->lock->next;
   }
-  unlock(&lock_allocate);
+  unlock(&_instance->lock_allocate);
+  pReturn_code->lock = FREE;
+  pReturn_code->next = 0;
+  pReturn_code->ptr = 0;
+  return pReturn_code;
 }
 
-struct allocate *_release_lock(void *ptr) {
-  lock(&lock_allocate);
+void _release_lock(void *ptr) {
+  lock(&_instance->lock_allocate);
   ((struct allocate *)ptr)->next = _instance->lock;
   _instance->lock = ptr;
-  unlock(&lock_allocate);
+  unlock(&_instance->lock_allocate);
 }
 
 static void *_allocate_block(int mode, unsigned int unMemSize) {
@@ -122,7 +121,7 @@ static void *_allocate_block(int mode, unsigned int unMemSize) {
 
   switch (mode) {
     case 0:
-      unActMemsize = unMemSize;
+      unActMemsize = BLOCKLOCK(unMemSize);
       break;
     default:
       unActMemsize = BLOCKPAGE;
@@ -153,7 +152,7 @@ static void *_allocate_block(int mode, unsigned int unMemSize) {
 #endif
 
   pHeap = (struct HeapBlock *)pReturn_code;
-  memset(pHeap, 0x00, sizeof(struct HeapBlock));
+  pHeap->lock = _allocate_lock();
   pHeapInf = (struct HeapInf *)((char *)pHeap + sizeof(struct HeapBlock));
   unActMemsize -= sizeof(struct HeapBlock);
   if (mode == 0) {
@@ -169,6 +168,7 @@ static void *_allocate_block(int mode, unsigned int unMemSize) {
     pHeapInf = (struct HeapInf *)((char *)pHeapInf + sizeof(struct HeapInf));
     pHeapInf->unMem_flg = ALLOCATE_STATUS_FREE;
     pHeapInf->unMem_size = unActMemsize - sizeof(struct HeapInf) * 4;
+
     pHeapInf = (struct HeapInf *)((char *)pHeapInf + pHeapInf->unMem_size +
                                   sizeof(struct HeapInf));
     pHeapInf->unMem_flg = ALLOCATE_STATUS_FREE;
@@ -181,30 +181,7 @@ static void *_allocate_block(int mode, unsigned int unMemSize) {
   return pReturn_code;
 }
 
-struct HeapBlock *hasNext(struct HeapBlock *cur, struct list_head *head,
-                          int tid) {
-#ifndef _MulThread
-  if (cur->list.next == head) {
-    return 0;
-  }
-  return list_entry(cur->list.next, struct HeapBlock, list);
-#else
-  struct HeapBlock *next = 0;
-  lock(&lock_allocate);
-  cur = list_entry(cur->list.next, struct HeapBlock, list);
-  for (; &cur->list != head;
-       cur = list_entry(cur->list.next, struct HeapBlock, list)) {
-    if (cur->tid == tid) {
-      next = cur;
-      break;
-    }
-  }
-  unlock(&lock_allocate);
-  return next;
-#endif
-}
-
-static void *_allocate_sub_block(unsigned int unMemAct_size, unsigned int tid) {
+static void *_allocate_sub_block(unsigned int unMemAct_size) {
   int iMem_flg = 0;
   void *pReturn_code = NULL;
   unsigned int unMemFree_size;
@@ -214,18 +191,15 @@ static void *_allocate_sub_block(unsigned int unMemAct_size, unsigned int tid) {
   struct HeapInf *pWorkInf = NULL;
 
   head = &_instance->head;
+  // First Block, can't modfiy by any thread
+  pHeap = (struct HeapBlock *)head->next;
 
-  lock(&lock_allocate);
-  pHeap = list_entry(head->next, struct HeapBlock, list);
-  unlock(&lock_allocate);
-
-  if (unMemAct_size > PAGESIZE) {
+  if (unMemAct_size > BLOCKPAGE) {
     pHeap = (struct HeapBlock *)_allocate_block(
         0,
         unMemAct_size + sizeof(struct HeapBlock) + sizeof(struct HeapInf) * 2);
     if (pHeap != NULL) {
-      list_add_tail_safe(&pHeap->list, head);
-      pHeap->tid = tid;
+      list_add_tail(&pHeap->list, head);
       pReturn_code =
           (char *)pHeap + sizeof(struct HeapBlock) + sizeof(struct HeapInf);
     } else {
@@ -237,23 +211,33 @@ static void *_allocate_sub_block(unsigned int unMemAct_size, unsigned int tid) {
                                 sizeof(struct HeapInf));
   do {
     pHeapInf = (struct HeapInf *)((char *)pHeap + sizeof(struct HeapBlock));
-    if (pHeap->tid != tid || pHeapInf->unMem_flg == ALLOCATE_ALL_BLOCK) {
-      pHeap = hasNext(pHeap, head, tid);
-      if (pHeap != NULL) {
+    if (pHeapInf->unMem_flg == ALLOCATE_ALL_BLOCK) {
+      lock(&_instance->lock_read);
+      if (pHeap->list.next == head) {
+        unlock(&_instance->lock_read);
+      } else {
+        pHeap = (struct HeapBlock *)(pHeap->list.next);
         pWorkInf = (struct HeapInf *)((char *)pHeap + sizeof(struct HeapBlock) +
                                       sizeof(struct HeapInf));
-      } else {
-        pHeap = (struct HeapBlock *)_allocate_block(1, 0);
-        if (pHeap != NULL) {
-          list_add_tail_safe(&pHeap->list, head);
-          pHeap->tid = tid;
-          pWorkInf =
-              (struct HeapInf *)((char *)pHeap + sizeof(struct HeapBlock) +
-                                 sizeof(struct HeapInf));
-        } else {
-          goto EXIT;
-        }
       }
+
+      // pHeap = hasNext(pHeap, head, tid);
+      // if (pHeap != NULL) {
+      //   pWorkInf = (struct HeapInf *)((char *)pHeap + sizeof(struct
+      //   HeapBlock) +
+      //                                 sizeof(struct HeapInf));
+      // } else {
+      //   pHeap = (struct HeapBlock *)_allocate_block(1, 0);
+      //   if (pHeap != NULL) {
+      //     list_add_tail_safe(&pHeap->list, head);
+      //     pHeap->tid = tid;
+      //     pWorkInf =
+      //         (struct HeapInf *)((char *)pHeap + sizeof(struct HeapBlock) +
+      //                            sizeof(struct HeapInf));
+      //   } else {
+      //     goto EXIT;
+      //   }
+      // }
     } else if (pWorkInf->unMem_flg == ALLOCATE_STATUS_FREE) {
       if (pWorkInf->unMem_size >= unMemAct_size + sizeof(struct HeapInf) * 2) {
         unMemFree_size =
@@ -315,9 +299,9 @@ EXIT:
   return pReturn_code;
 }
 
-void *_allocate(unsigned int ulAreaSize, unsigned int tid) {
+void *_allocate(unsigned int ulAreaSize) {
   unsigned int unMemAct_size = length_align(ulAreaSize);
-  return _allocate_sub_block(unMemAct_size, tid);
+  return _allocate_sub_block(unMemAct_size);
 }
 
 static void _release_block(struct list_head *head) {
@@ -332,7 +316,7 @@ static void _release_block(struct list_head *head) {
   for (; &pHeap->list != head;
        pHeap = n, n = list_entry(n->list.next, struct HeapBlock, list)) {
     list_del(&pHeap->list);
-    pHeapInf = (struct HeapInf *)(pHeap + 1);
+    pHeapInf = (struct HeapInf *)((char *)pHeap + sizeof(struct HeapBlock));
     free_size = sizeof(struct HeapBlock) + sizeof(struct HeapInf) * 2 +
                 pHeapInf->unMem_size;
 #if defined(_UseVitralMemory)
@@ -507,7 +491,7 @@ EXIT:
   return iReturn_code;
 }
 
-void _release(void *ptr) { _release_sub_block(ptr); }
+void _release(void *ptr, int size) { _release_sub_block(ptr); }
 
 int createHeapManage() {
   int unFreeMemsize = 0;
@@ -550,7 +534,7 @@ int destoryHeapManage() {
     GlobalUnlock(hGlobal);
     GlobalFree(hGlobal);
 #else
-    munmap(pHeap, free_size);
+    munmap(pHeap, BLOCKLOCK(BLOCKPAGE));
 #endif
     _instance = 0;
   }

@@ -36,6 +36,7 @@ struct HeapBlock {
 
 struct HeapInstance {
   struct list_head head;
+  struct HeapList *list;
   struct allocate *lock;
   unsigned int lock_allocate;
 };
@@ -65,10 +66,10 @@ int _allocate_lock_free() {
 #ifdef _WIN32
     if (_InterlockedCompareExchange((unsigned long *)&_instance->lock, 0, 0) !=
         0)
-    //返回lock_t初始值
+    //杩斿洖lock_t鍒濆鍊?
 #else
     if (__sync_bool_compare_and_swap(&_instance->lock, 0, 0) ==
-        0)  //写入新值成功返回1，写入失败返回0
+        0)  //鍐欏叆鏂板�兼垚鍔熻繑鍥?1锛屽啓鍏ュけ璐ヨ繑鍥?0
 #endif
       return 1;
 #ifdef _WIN32

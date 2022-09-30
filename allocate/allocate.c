@@ -20,6 +20,14 @@ struct HeapLock {
   unsigned int lock;
 };
 
+struct HeapRwLock {
+  unsigned int lock_r;
+  unsigned int lock_w;
+  unsigned int lock_lock;
+  unsigned int r_c;
+  struct HeapLock *next;
+};
+
 struct allocate {
   struct allocate *next;
 };
@@ -31,7 +39,7 @@ struct HeapInf {
 
 struct HeapBlock {
   struct list_head list;
-  struct HeapLock *lock;
+  struct HeapRwLock *lock;
 };
 
 struct HeapInstance {
@@ -41,13 +49,10 @@ struct HeapInstance {
   unsigned int lock_allocate;
 };
 
-#define BLOCKSIZE sizeof(struct HeapBlock);
-
 #define BLOCKPAGE (1024 * 128)
 #define BLOCKSEP (1024 * 64)
-#define BLOCKLOCK(n) (n + sizeof(struct HeapBlock) + sizeof(struct HeapInf) * 2)
-// #define MINIPAGE 1024
-#define LOCK_SIZE 16
+#define BLOCKINFOSIZE sizeof(struct HeapBlock) + sizeof(struct HeapInf) * 2;
+#define BLOCKALLSIZE(n) (n) + BLOCKINFOSIZE
 
 #define ALLOCATE_ALL_BLOCK 0xFFFFFFFF    // all for block
 #define ALLOCATE_SEP_BLOCK 0xEEEEEEEE    // for floated block
@@ -66,10 +71,8 @@ int _allocate_lock_free() {
 #ifdef _WIN32
     if (_InterlockedCompareExchange((unsigned long *)&_instance->lock, 0, 0) !=
         0)
-    //返回lock_t初始�?
 #else
-    if (__sync_bool_compare_and_swap(&_instance->lock, 0, 0) ==
-        0)  //写入新值成功返�?1，写入失败返�?0
+    if (__sync_bool_compare_and_swap(&_instance->lock, 0, 0) == 0)
 #endif
       return 1;
 #ifdef _WIN32
@@ -110,6 +113,34 @@ void _release_lock(void *ptr) {
   unlock(&_instance->lock_allocate);
 }
 
+void _lock_read(struct HeapRwLock *rwLock, int lflg) {
+  switch (lflg) {
+    case LOCK:
+#ifndef _WIN32
+      __sync_fetch_and_add(&rwLock->r_c, 1);
+      __sync_lock_test_and_set(&rwLock->lock_r, LOCK);
+      __sync_lock_test_and_set(&rwLock->lock_w, LOCK);
+#else
+      _InterlockedIncrement((unsigned long *)&rwLock->r_c);
+      _InterlockedExchange((unsigned long *)&rwLock->lock_r, LOCK);
+      _InterlockedExchange((unsigned long *)&rwLock->lock_w, LOCK);
+#endif
+      break;
+    case FREE:
+    default:
+#ifndef _WIN32
+      __sync_fetch_and_sub(&rwLock->r_c, 1);
+#else
+      _InterlockedDecrement((unsigned long *)&rwLock->r_c);
+#endif
+      if (rwLock->r_c == 0) {
+        unlock(&rwLock->lock_r);
+        unlock(&rwLock->lock_w);
+      }
+      break;
+  }
+}
+
 static void *_allocate_block(int mode, unsigned int unMemSize) {
 #ifdef _WIN32
   HGLOBAL hGlobal = 0;
@@ -122,7 +153,7 @@ static void *_allocate_block(int mode, unsigned int unMemSize) {
 
   switch (mode) {
     case 0:
-      unActMemsize = BLOCKLOCK(unMemSize);
+      unActMemsize = BLOCKALLSIZE(unMemSize);
       break;
     default:
       unActMemsize = BLOCKPAGE;
@@ -153,7 +184,9 @@ static void *_allocate_block(int mode, unsigned int unMemSize) {
 #endif
 
   pHeap = (struct HeapBlock *)pReturn_code;
-  pHeap->lock = _allocate_lock();
+  pHeap->lock.lock_r = pHeap->lock.lock_w = pHeap->lock.lock_lock = FREE;
+  pHeap->lock.next = NULL;
+  pHeap->lock.r_c = 0;
   pHeapInf = (struct HeapInf *)((char *)pHeap + sizeof(struct HeapBlock));
   unActMemsize -= sizeof(struct HeapBlock);
   if (mode == 0) {
@@ -213,9 +246,9 @@ static void *_allocate_sub_block(unsigned int unMemAct_size) {
   do {
     pHeapInf = (struct HeapInf *)((char *)pHeap + sizeof(struct HeapBlock));
     if (pHeapInf->unMem_flg == ALLOCATE_ALL_BLOCK) {
-      lock(&_instance->lock_read);
+      _lock_read(&pHeap->lock, LOCK);
       if (pHeap->list.next == head) {
-        unlock(&_instance->lock_read);
+        _lock_read(&pHeap->lock, FREE);
       } else {
         pHeap = (struct HeapBlock *)(pHeap->list.next);
         pWorkInf = (struct HeapInf *)((char *)pHeap + sizeof(struct HeapBlock) +
@@ -312,14 +345,11 @@ static void _release_block(struct list_head *head) {
   HGLOBAL hGlobal = 0;
 #endif
   int free_size;
-  pHeap = list_entry(head->next, struct HeapBlock, list);
-  n = list_entry(pHeap->list.next, struct HeapBlock, list);
+  pHeap = (struct HeapBlock *)head->next;
+  n = (struct HeapBlock *)pHeap->list.next;
   for (; &pHeap->list != head;
-       pHeap = n, n = list_entry(n->list.next, struct HeapBlock, list)) {
+       pHeap = n, n = (struct HeapBlock *)pHeap->list.next) {
     list_del(&pHeap->list);
-    pHeapInf = (struct HeapInf *)((char *)pHeap + sizeof(struct HeapBlock));
-    free_size = sizeof(struct HeapBlock) + sizeof(struct HeapInf) * 2 +
-                pHeapInf->unMem_size;
 #if defined(_UseVitralMemory)
     VirtualFree(pHeap, 0, MEM_RELEASE);
 #elif defined(_WIN32)
@@ -327,6 +357,8 @@ static void _release_block(struct list_head *head) {
     GlobalUnlock(hGlobal);
     GlobalFree(hGlobal);
 #else
+    pHeapInf = (struct HeapInf *)((char *)pHeap + sizeof(struct HeapBlock));
+    free_size = BLOCKINFOSIZE + pHeapInf->unMem_size;
     munmap(pHeap, free_size);
 #endif
   }

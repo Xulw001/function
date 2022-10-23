@@ -128,7 +128,7 @@ int destroyPool(struct thread_pool* pool) {
 #ifndef _WIN32
   __sync_lock_test_and_set(&pool->shutdown, 1);
 #else
-  InterlockedExchange((unsigned long*)&pool->shutdown, 1);
+  _InterlockedExchange((unsigned long*)&pool->shutdown, 1);
 #endif
 
   if (sem_v(pool->task_ready, pool->max_threads) != 0) {

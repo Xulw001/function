@@ -83,23 +83,19 @@ static inline void list_add_tail(struct list_head *_ptr,
     p->next = n;         \
   }
 
-#define list_del(_ptr)                  \
-  {                                     \
+#define list_del(_ptr)                      \
+  {                                         \
     __list_del((_ptr)->prev, (_ptr)->next); \
-    (_ptr)->prev = 0;                     \
-    (_ptr)->next = 0;                     \
+    (_ptr)->prev = 0;                       \
+    (_ptr)->next = 0;                       \
   }
 
-#define __list_add(_ptr, p, n) \
-  {                            \
-    n->prev = _ptr;            \
-    _ptr->next = n;            \
-    _ptr->prev = p;            \
-    p->next = _ptr;            \
+#define list_add_tail(_ptr, list) \
+  {                               \
+    (_ptr)->prev = (list)->prev;  \
+    (_ptr)->next = (list);        \
+    (list)->prev->next = (_ptr);  \
+    (list)->prev = (_ptr);        \
   }
-
-#define list_add(_ptr, list) __list_add((_ptr), (list), (list)->next)
-
-#define list_add_tail(_ptr, list) __list_add((_ptr), (list)->prev, (list))
 
 #endif

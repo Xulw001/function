@@ -15,14 +15,10 @@ void lock(unsigned int* lock_t) {
     ;
 }
 
-int islock(unsigned int* lock_t) {
-#ifdef _WIN32
-  if (_InterlockedCompareExchange((unsigned long*)lock_t, FREE, FREE) == LOCK)
+void unlock(unsigned int* lock_t) {
+#ifndef _WIN32
+  __sync_lock_test_and_set(lock_t, FREE);
 #else
-  if (__sync_bool_compare_and_swap(lock_t, FREE, FREE) == 0)
+  _InterlockedExchange((unsigned long*)lock_t, FREE);
 #endif
-    return 1;
-  return 0;
 }
-
-void unlock(unsigned int* lock_t) { *lock_t = FREE; }

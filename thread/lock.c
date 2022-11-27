@@ -5,14 +5,20 @@
 
 void lock(unsigned int* lock_t) {
 #ifdef _WIN32
-  while (_InterlockedCompareExchange((unsigned long*)lock_t, LOCK, FREE) == LOCK)
-    //返回lock_t初始值
-    ;
+  // return Destination's value
+  while (_InterlockedCompareExchange((unsigned long*)lock_t, LOCK, FREE) ==
+         LOCK)
 #else
-  while (__sync_bool_compare_and_swap(lock_t, FREE, LOCK) ==
-         0)  //写入新值成功返回1，写入失败返回0
-    ;
+  // return 1 while success，othersize return 0
+  while (__sync_bool_compare_and_swap(lock_t, FREE, LOCK) == 0)
 #endif
+    ;
 }
 
-void unlock(unsigned int* lock_t) { *lock_t = FREE; }
+void unlock(unsigned int* lock_t) {
+#ifndef _WIN32
+  __sync_lock_test_and_set(lock_t, FREE);
+#else
+  _InterlockedExchange((unsigned long*)lock_t, FREE);
+#endif
+}

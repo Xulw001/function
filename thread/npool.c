@@ -1,5 +1,5 @@
-#include "pool.h"
 #include "lock.h"
+#include "pool.h"
 #ifdef _USE_CAS
 #include <malloc.h>
 #include <string.h>
@@ -77,7 +77,10 @@ int createPool(struct thread_pool** pool, int max_thread, int onfull) {
 #ifndef _WIN32
     max_thread = (sysconf(_SC_NPROCESSORS_ONLN) - 1) * 2;
 #else
-    ;
+    SYSTEM_INFO si;
+    memset(&si, 0, sizeof(SYSTEM_INFO));
+    GetSystemInfo(&si);
+    max_thread = si.dwNumberOfProcessors - 1;
 #endif
   }
 
@@ -105,7 +108,7 @@ int createPool(struct thread_pool** pool, int max_thread, int onfull) {
     if (pthread_create(&(*pool)->threads[i], NULL, execute, (void*)*pool) != 0)
 #else
     if (((*pool)->threads[i] =
-            _beginthreadex(NULL, 0, execute, (void*)*pool, 0, 0)) == 0)
+             _beginthreadex(NULL, 0, execute, (void*)*pool, 0, 0)) == 0)
 #endif
     {
       destroyPool(*pool);
@@ -125,7 +128,7 @@ int destroyPool(struct thread_pool* pool) {
 #ifndef _WIN32
   __sync_lock_test_and_set(&pool->shutdown, 1);
 #else
-  InterlockedExchange((unsigned long*)&pool->shutdown, 1);
+  _InterlockedExchange((unsigned long*)&pool->shutdown, 1);
 #endif
 
   if (sem_v(pool->task_ready, pool->max_threads) != 0) {

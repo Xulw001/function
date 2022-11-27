@@ -12,7 +12,7 @@ void _release(void *ptr, int size);
 void _thread_release();
 
 #define allocate(size) _allocate(size)
-#define release(ptr) _release(ptr, 0)
+#define release(ptr) _release(ptr, -1)
 
 #ifdef __cplusplus
 }

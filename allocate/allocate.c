@@ -301,6 +301,11 @@ static void *_allocate_sub_block(struct ThreadHeapBlock *ptHeap,
         unMemFree_size =
             pWorkInf->unMem_size - (unMemAct_size + sizeof(struct HeapInf) * 2);
 
+        if (unMemFree_size <= sizeof(struct HeapInf) * 2) {
+          unMemAct_size += unMemFree_size;
+          unMemFree_size = 0;
+        }
+
         pWorkInf->unMem_flg = ALLOCATE_STATUS_USED;
         pWorkInf->unMem_size = unMemAct_size;
 
@@ -317,22 +322,22 @@ static void *_allocate_sub_block(struct ThreadHeapBlock *ptHeap,
         pWorkInf->unMem_flg = ALLOCATE_STATUS_USED;
         pWorkInf->unMem_size = unMemAct_size;
 
-        pWorkInf =
-            (struct HeapInf *)((char *)pWorkInf + sizeof(struct HeapInf));
-        pWorkInf->unMem_flg = ALLOCATE_STATUS_FREE;
-        pWorkInf->unMem_size = unMemFree_size;
+        if (unMemFree_size != 0) {
+          pWorkInf =
+              (struct HeapInf *)((char *)pWorkInf + sizeof(struct HeapInf));
+          pWorkInf->unMem_flg = ALLOCATE_STATUS_FREE;
+          pWorkInf->unMem_size = unMemFree_size;
 
-        if (unMemFree_size >= sizeof(struct HeapNext)) {
           pHeapfree =
               (struct HeapNext *)((char *)pWorkInf + sizeof(struct HeapInf));
           list_add_tail(&pHeapfree->list, &pHeapList->list);
-        }
 
-        pWorkInf =
-            (struct HeapInf *)((char *)pWorkInf + sizeof(struct HeapInf) +
-                               pWorkInf->unMem_size);
-        pWorkInf->unMem_flg = ALLOCATE_STATUS_FREE;
-        pWorkInf->unMem_size = unMemFree_size;
+          pWorkInf =
+              (struct HeapInf *)((char *)pWorkInf + sizeof(struct HeapInf) +
+                                 pWorkInf->unMem_size);
+          pWorkInf->unMem_flg = ALLOCATE_STATUS_FREE;
+          pWorkInf->unMem_size = unMemFree_size;
+        }
       } else {
         pHeapList =
             (struct HeapNext *)((char *)pWorkInf + sizeof(struct HeapInf));
@@ -540,9 +545,11 @@ static void _release_block(struct ThreadHeapBlock *thb) {
     free_size = BLOCKINFOSIZE + pHeapInf->unMem_size;
     munmap(pHeap, free_size);
 #endif
+    if (final) break;
+
     pHeap = n;
     n = (struct HeapBlock *)pHeap->list.next;
-  } while (!final);
+  } while (TRUE);
   lock(&_instance->lock_allocate);
   list_del(&thb->list);
   unlock(&_instance->lock_allocate);
@@ -600,7 +607,6 @@ static int _release_sub_block(struct ThreadHeapBlock *pTHeap, void *ptr) {
     case ALLOCATE_STATUS_USED:
       pwk_inf = inf;
       do {
-      Find:
         pwk_inf = (struct HeapInf *)((char *)pwk_inf + pwk_inf->unMem_size +
                                      sizeof(struct HeapInf) * 2);
         if (pwk_inf->unMem_flg != ALLOCATE_STATUS_FREE &&
@@ -608,9 +614,6 @@ static int _release_sub_block(struct ThreadHeapBlock *pTHeap, void *ptr) {
             pwk_inf->unMem_flg != ALLOCATE_SEP_BLOCK) {
           iReturn_code = -1;
           goto EXIT;
-        }
-        if (pwk_inf->unMem_size < sizeof(struct HeapNext)) {
-          goto Find;
         }
       } while (pwk_inf->unMem_flg == ALLOCATE_STATUS_USED);
 
@@ -641,11 +644,9 @@ static int _release_sub_block(struct ThreadHeapBlock *pTHeap, void *ptr) {
         unMemFree_size += pwk_inf->unMem_size;
         unMemNext_free_flg = 1;
 
-        if (pwk_inf->unMem_size >= sizeof(struct HeapNext)) {
-          pHeapFree = pHeapList;
-          pHeapList = (struct HeapNext *)pHeapFree->list.next;
-          list_del(&pHeapFree->list);
-        }
+        pHeapFree = pHeapList;
+        pHeapList = (struct HeapNext *)pHeapFree->list.next;
+        list_del(&pHeapFree->list);
       }
 
       pwk_inf = (struct HeapInf *)((char *)inf - sizeof(struct HeapInf));
@@ -734,7 +735,7 @@ void _release(void *ptr, int size) {
   }
 
   unMemAct_size = length_align(size);
-  if (unMemAct_size <= BLOCKSEP) {
+  if (unMemAct_size != -1 && unMemAct_size <= BLOCKSEP) {
     if (unMemAct_size > 96) {
       idx = 7;
     } else if (unMemAct_size > 64) {

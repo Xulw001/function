@@ -13,10 +13,10 @@ TARGET := Test
 
 TARGET_ARCH = -m32 -fPIC
 LIBDIR = $(addprefix -L,$(LIBDIR32))
-LDLIBS = -lpthread
+LDLIBS = -lpthread -lssl -lcrypto
 
 ## C Pre Processor Options (Multi-thread)
-CPPFLAGS := -D_REENTRANT -D_MulThread -O2 -Werror
+CPPFLAGS := -D_REENTRANT -D_MulThread -O2 #-Werror
 ## C Compile Options
 CFLAGS :=
 ## C++ Compile Options
@@ -31,7 +31,7 @@ ifeq ($(MAKECMDGOALS), debug)
 	CXXFLAGS += -g -D_DEBUG
 endif
 
-SRC = $(wildcard allocate/*.c base/*.c thread/*.c *.c)
+SRC = $(wildcard allocate/*.c base/*.c thread/*.c algorithm/*.c socket/*.c other/*.c *.c)
 OBJ = $(SRC:.c=.o) $(SRCXX:.cpp=.o)
 
 all : $(TARGET)

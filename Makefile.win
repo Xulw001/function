@@ -4,7 +4,7 @@ CXX := g++
 RM := del /s /q
 
 ## Include Dir
-INCLUDE-DIR := $(C_HOME)/include D:/source/openssl-openssl-3.0.1/openssl/include
+INCLUDE-DIR := $(C_HOME)/include D:/source/openssl-openssl-3.0.1/openssl/include .
 INCLUDE = $(if $(INCLUDE-DIR),$(addprefix -I,$(INCLUDE-DIR)),)
 
 LIBDIR32 = D:/source/openssl-openssl-3.0.1/openssl/lib
@@ -16,7 +16,7 @@ LIBDIR = $(addprefix -L,$(LIBDIR32))
 LDLIBS = -lpthread -lssl -lcrypto -lwsock32 -lws2_32
 
 ## C Pre Processor Options (Multi-thread)
-CPPFLAGS := -D_REENTRANT -D_MulThread -D_WIN32_WINNT=0x0600 -D_USE_CAS
+CPPFLAGS := -D_REENTRANT -D_MulThread -D_WIN32_WINNT=0x0600 -D_USE_CAS -D_TEST_DEBUG
 ## C Compile Options
 CFLAGS :=
 ## C++ Compile Options

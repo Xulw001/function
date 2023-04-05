@@ -1,281 +1,219 @@
-#ifndef _SOCKET_SERVER
-#define _SOCKET_SERVER
+#include "server.h"
+#ifndef _WIN32
+#include <pthread.h>
+#else
+#include <process.h>
+#include <windows.h>
 #endif
-#include "socket.h"
+#include <stdio.h>
+#include <thread/lock.h>
 
-#define DEFAULT_KEY "server.key"
-#define DEFAULT_CRT "server.crt"
+#ifndef _WIN32
+#define thrd_t pthread_t
+#else
+#define thrd_t uintptr_t
+#endif
 
-socket_function* initServer(socket_option* opt, callback cb, char* msg) {
-  int buf = 0, err = 0;
-  char* _msg = 0;
-  socket_function* fun = 0;
-  socket_base* mSocket = 0;
-  socket_ssl* ssl_st = 0;
-  socket_fd* fds = 0;
-  socket_ssl_fd* ssl_fd = 0;
-
-  opt->timeout = opt->timeout ? opt->timeout : 30;
-
-  if ((err = __optchk(opt)) < 0) {
-    ERROUT("socket_option", err);
-    return 0;
-  }
-
-  fun = (socket_function*)malloc(sizeof(socket_function));
-  if (fun == 0) {
-    ERROUT("malloc", __errno());
-    return 0;
-  }
-
-  mSocket = (socket_base*)malloc(sizeof(socket_base));
-  if (mSocket == 0) {
-    ERROUT("malloc", __errno());
-    return 0;
-  }
-
-  if (opt->ssl_flg == 1) {
-    ssl_fd = (socket_ssl_fd*)malloc(sizeof(socket_ssl_fd));
-    if (ssl_fd == 0) {
-      ERROUT("malloc", __errno());
-      return 0;
-    }
-  }
-
-  ssl_st = (socket_ssl*)malloc(sizeof(socket_ssl));
-  if (ssl_st == 0) {
-    ERROUT("malloc", __errno());
-    return 0;
-  }
-  memset(ssl_st, 0x00, sizeof(socket_ssl));
-  ssl_st->fds = ssl_fd;
-  ssl_st->p_flg = 0;
-
-  if (!opt->aio_flg) {
-    fds = (socket_fd*)malloc(sizeof(socket_fd) * CT_NUM);
-    if (fds == 0) {
-      ERROUT("malloc", __errno());
-      return 0;
-    }
-    for (int i = 0; i < CT_NUM; i++) {
-      for (int j = 0; j < MAX_CONNECT; j++) {
-        fds[i].st[j].fd = INVALID_SOCKET;
-        fds[i].st[j].status = 0;
-        fds[i].st[j].tasklock = 0;
-        fds[i].st[j].tasknum = 0;
-      }
-      fds[i].use = 0;
-    }
-  }
-
-  fun->mSocket = mSocket;
-  fun->pool = 0;
-  fun->callback = cb;
-  fun->heloMsg = 0;
-  fun->listen = __nio_accept;
-  fun->fin = __fin;
-  fun->send = __send;
-  fun->recv = __recv;
-  fun->ssl_bind = __ssl_bind;
-  fun->load_cert_file = __load_cert_file;
-
-  if (msg != 0) {
-    _msg = (char*)malloc(strlen(msg) + 1);
-    if (_msg == 0) {
-      ERROUT("malloc", __errno());
-      return 0;
-    }
-    strcpy(_msg, msg);
-    fun->heloMsg = _msg;
-  }
-
-  mSocket->opt = *opt;
-  mSocket->fd = INVALID_SOCKET;
-  mSocket->state = _CS_IDLE;
-  mSocket->buf = NULL;
-  mSocket->cli_fd = fds;
-  mSocket->ssl_st = ssl_st;
-  if (opt->host) {
-    mSocket->opt.host = (char*)malloc(strlen(opt->host) + 1);
-    strcpy(mSocket->opt.host, opt->host);
-  } else {
-    mSocket->opt.host = 0x00;
-  }
-
-  return fun;
-}
-
-int __bind(socket_function* owner) {
+int InitServer(Socket* pSocket) {
   int err = 0;
-  int optlen, option;
-  socket_option* opt;
+  int option;
+  channel_extend* psock = NULL;
   ADDRINFOT* pAI = NULL;
   ADDRINFOT hints;
   PSOCKADDR pSockAddr;
-  socket_base* mSocket = NULL;
-  char server[HOSTLEN];
+  char server[HOST_NAME_MAX];
   char chPort[6];
+
+  psock = (channel_extend*)malloc(sizeof(channel_extend));
+  if (psock == 0) {
+    ERROUT("malloc", __errno());
+    return -1;
+  }
 
   memset(server, 0x00, sizeof(server));
   memset(chPort, 0x00, sizeof(chPort));
   memset(&hints, 0x00, sizeof(hints));
-  pAI = NULL;
-  mSocket = owner->mSocket;
-  opt = &mSocket->opt;
 
-  if (err = __open(owner) != 0) return err;
-
-  if (mSocket->state != _CS_IDLE) {
-    ERROUT("connect state", STATE_ERR);
-    return STATE_ERR;
-  }
-
-  if (opt->host) {
-    strncpy(server, opt->host, HOSTLEN);
-  } else {
-    strncpy(server, "0.0.0.0", 8);
-  }
-  sprintf(chPort, "%d", opt->port);
+  strncpy(server, pSocket->info.host, HOST_NAME_MAX);
+  sprintf(chPort, "%d", pSocket->info.port);
 
   if (strcmp(server, "localhost") == 0)
     hints.ai_family = AF_INET;
   else
     hints.ai_family = AF_UNSPEC;
-  hints.ai_socktype = SOCK_STREAM;
+
+  if (pSocket->opt.udp_flg) {
+    hints.ai_socktype = SOCK_DGRAM;
+  } else {
+    hints.ai_socktype = SOCK_STREAM;
+  }
 
   if ((err = getaddrinfo(server, chPort, &hints, &pAI)) != 0) {
     ERROUT("getaddrinfo", __errno());
-    return BIND_ERR;
+    goto ERR;
   }
 
-  mSocket->fd = socket(pAI->ai_family, pAI->ai_socktype, pAI->ai_protocol);
-  if (mSocket->fd == INVALID_SOCKET) {
-    freeaddrinfo(pAI);
+  psock->fd = socket(pAI->ai_family, pAI->ai_socktype, pAI->ai_protocol);
+  if (psock->fd == INVALID_SOCKET) {
     ERROUT("socket", __errno());
-    return BIND_ERR;
+    goto ERR;
   }
 
-  optlen = sizeof(option);
-  option = 1;
-  if ((err = setsockopt(mSocket->fd, SOL_SOCKET, SO_REUSEADDR, &option,
-                        optlen)) != 0) {
-    ERROUT("setsockopt", __errno());
-    return BIND_ERR;
-  }
+  if (pSocket->opt.aio_flg == 1 || pSocket->opt.udp_flg == 1) {
+    option = 1;
+    if ((err = setsockopt(psock->fd, SOL_SOCKET, SO_REUSEADDR,
+                          (const void*)&option, sizeof(option))) != 0) {
+      ERROUT("setsockopt", __errno());
+      goto ERR;
+    }
 
 #ifndef _WIN32
-  if (opt->aio_flg == 1) {
-    optlen = sizeof(option);
     option = 1;
-    if ((setsockopt(mSocket->fd, SOL_SOCKET, SO_REUSEPORT, &option, optlen)) !=
-        0) {
+    if ((setsockopt(psock->fd, SOL_SOCKET, SO_REUSEPORT, (const void*)&option,
+                    sizeof(option))) != 0) {
       ERROUT("setsockopt", __errno());
-      return BIND_ERR;
+      goto ERR;
     }
-  }
 #endif
-
-  if (opt->nag_flg == 1) {
-    optlen = sizeof(option);
-    option = 1;
-    if ((setsockopt(mSocket->fd, IPPROTO_TCP, TCP_NODELAY, &option, optlen)) !=
-        0) {
-      ERROUT("setsockopt", __errno());
-      return BIND_ERR;
-    }
   }
 
   pSockAddr = (PSOCKADDR)pAI->ai_addr;
   switch (pAI->ai_family) {
     case AF_INET:
       if (((struct sockaddr_in*)pSockAddr)->sin_port == 0)
-        ((struct sockaddr_in*)pSockAddr)->sin_port = htons((u_short)opt->port);
+        ((struct sockaddr_in*)pSockAddr)->sin_port =
+            htons((u_short)pSocket->info.port);
       break;
     case AF_INET6:
       if (((struct sockaddr_in6*)pSockAddr)->sin6_port == 0)
         ((struct sockaddr_in6*)pSockAddr)->sin6_port =
-            htons((u_short)opt->port);
+            htons((u_short)pSocket->info.port);
+      option = 0;
+      if (setsockopt(psock->fd, IPPROTO_IPV6, IPV6_V6ONLY, (char*)&option,
+                     sizeof(option)) == 0) {
+        ERROUT("setsockopt", __errno());
+        goto ERR;
+      }
       break;
   }
 
-  if (bind(mSocket->fd, (PSOCKADDR)pAI->ai_addr, pAI->ai_addrlen) < 0) {
-    freeaddrinfo(pAI);
+  if (bind(psock->fd, (PSOCKADDR)pAI->ai_addr, pAI->ai_addrlen) < 0) {
     ERROUT("bind", __errno());
-    return BIND_ERR;
+    goto ERR;
   }
 
-  if (listen(mSocket->fd, BACKLOG) < 0) {
-    freeaddrinfo(pAI);
-    ERROUT("listen", __errno());
-    return BIND_ERR;
+  if (pSocket->opt.udp_flg == 0) {
+    if (listen(psock->fd, BACKLOG) < 0) {
+      ERROUT("listen", __errno());
+      goto ERR;
+    }
+  } else {
+    memcpy(&psock->svraddr, (PSOCKADDR)pAI->ai_addr, pAI->ai_addrlen);
   }
 
-  option = 1;
+  if (pSocket->opt.nio_flg == 1) {
+    option = 1;
 #ifndef _WIN32
-  if (ioctl(mSocket->fd, FIONBIO, &option))
+    if (ioctl(psock->fd, FIONBIO, &option))
 #else
-  if (ioctlsocket(mSocket->fd, FIONBIO, &option))
+    if (ioctlsocket(psock->fd, FIONBIO, &option))
 #endif
-  {
-    ERROUT("ioctl", __errno());
-    return BIND_ERR;
-  }
-
-  if (opt->ssl_flg == 1) {
-    if (owner->mSocket->ssl_st->p_flg == 0) {
-      __load_cert_file(owner, _SSLV23_SERVER, 0, 0, 2, DEFAULT_KEY,
-                       DEFAULT_CRT);
+    {
+      ERROUT("ioctl", __errno());
+      goto ERR;
     }
   }
 
-  mSocket->state = _CS_LISTEN;
+  psock->timeout = pSocket->info.timeout;
+  psock->noblock = pSocket->opt.nio_flg;
+  psock->state = _CS_IDLE;
+  psock->mutex = FREE;
+  pSocket->fd = psock;
+  pSocket->opt.resv2 = 0x01;
+  freeaddrinfo(pAI);
+  return 0;
+ERR:
+  if (pAI != NULL) {
+    freeaddrinfo(pAI);
+    pAI = NULL;
+  }
+  if (psock != NULL) {
+    free(psock);
+    psock = NULL;
+  }
+  return -1;
+}
+
+int EndServer(Socket* socket) {
+  int err = 0;
+  if (socket->fd != NULL) {
+    ((channel_extend*)socket->fd)->state = _CS_STOP;
+    while (((channel_extend*)socket->fd)->state != _CS_END) {
+#ifdef _WIN32
+      Sleep(1000);
+#else
+      sleep(1);
+#endif
+    }
+
+    err = Close(((channel_extend*)socket->fd)->fd);
+    free(socket->fd);
+    socket->fd = NULL;
+  }
   return 0;
 }
 
-SSL* __ssl_bind(socket_function* owner, SOCKET fd) {
-  int err;
-  SSL* c_ssl;
-  socket_ssl* ssl_st = owner->mSocket->ssl_st;
+int AsyncListen(void* pSocket) { return 0; }
 
-  if (ssl_st->p_flg == 0) {
-    __load_cert_file(owner, _SSLV23_SERVER, 0, 0, 2, DEFAULT_KEY, DEFAULT_CRT);
-    ssl_st->p_flg = 1;
+// int Accept(void* pSocket) {
+//   channel_extend* socket = pSocket;
+//   int err;
+//   int size;
+//   struct sockaddr_in cliAddr;
+//   char sbuf[MSGBUF_8K];
+//   int clen = 0;
+//   while (socket->state == _CS_IDLE) {
+//     clen = sizeof(struct sockaddr_in);
+//     size = recvfrom(socket->fd, sbuf, MSGBUF_8K, 0, (struct
+//     sockaddr*)&cliAddr,
+//                     &clen);
+//     if (size < 0) {
+//       err = __errno();
+//       if (!socket->noblock ||
+//           (err != EINTR && err != EAGAIN && err != EWOULDBLOCK)) {
+//         ERROUT("recvfrom", err);
+//       }
+//       continue;
+//     }
 
-    ssl_st->fds = (socket_ssl_fd*)malloc(sizeof(socket_ssl_fd));
-    if (ssl_st->fds == 0) {
-      ERROUT("malloc", __errno());
-      return 0;
-    }
-  }
+//     err = socket->pRecv(cliAddr.sin_addr.s_addr, cliAddr.sin_port, sbuf,
+//     size); if (err < 0) {
+//       continue;
+//     }
 
-  if (fd != INVALID_SOCKET) {
-    c_ssl = SSL_new(ssl_st->ctx);
-    if (c_ssl == NULL) {
-      __sslErr(__FILE__, __LINE__, __errno(), "SSL_new");
-      return 0;
-    }
+//     do {
+//       size = socket->pSend(cliAddr.sin_addr.s_addr, cliAddr.sin_port, sbuf,
+//                            MSGBUF_8K);
+//       if (size <= 0) {
+//         break;
+//       }
 
-    if (!SSL_set_fd(c_ssl, fd)) {
-      __sslErr(__FILE__, __LINE__, __errno(), "SSL_set_fd");
-      goto Err;
-    }
+//       do {
+//         err = sendto(socket->fd, sbuf, size, 0, (struct sockaddr*)&cliAddr,
+//                      sizeof(cliAddr));
+//         if (err < 0) {
+//           err = __errno();
+//           if (!socket->noblock ||
+//               (err != EINTR && err != EAGAIN && err != EWOULDBLOCK)) {
+//             ERROUT("sendto", err);
+//             break;
+//           }
+//           continue;
+//         }
+//       } while (err < 0);
+//     } while (MSGBUF_8K <= size);
+//   }
 
-    SSL_set_accept_state(c_ssl);
-
-    do {
-      err = SSL_accept(c_ssl);
-    } while (__sslChk(c_ssl, err) == 1);
-
-    if (err != 1) {
-      __sslErr(__FILE__, __LINE__, __errno(), "SSL_accept");
-      goto Err;
-    }
-  }
-
-  return c_ssl;
-Err:
-  if (c_ssl) {
-    SSL_free(c_ssl);
-  }
-  return 0;
-}
+//   socket->state = _CS_END;
+//   return 0;
+// }

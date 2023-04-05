@@ -2,21 +2,16 @@
 #ifndef _WIN32
 #include <netdb.h>
 #include <netinet/tcp.h>
-#include <signal.h>
-#include <string.h>
-#include <sys/epoll.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
+#include <string.h>
+#include <stdlib.h>
+#include <errno.h>
 #else
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #endif
-#include <openssl/err.h>
-#include <openssl/ossl_typ.h>
-#include <openssl/rand.h>
-#include <openssl/ssl.h>
-#include <openssl/x509v3.h>
-#ifdef _DEBUG
+#ifdef _TEST_DEBUG
 #include <stdio.h>
 #endif
 
@@ -26,20 +21,16 @@ typedef struct sockaddr* PSOCKADDR;
 typedef struct addrinfo ADDRINFOT;
 #endif
 
-#ifndef MAX_CONNECT
-#ifdef _WIN32
-#undef FD_SETSIZE
-#define FD_SETSIZE 512
-#endif
-#define MAX_CONNECT 512
-#endif
-
-#ifndef CT_NUM
-#define CT_NUM (8)
+#ifndef HOST_NAME_MAX
+#define HOST_NAME_MAX 64
 #endif
 
 #ifndef BACKLOG
 #define BACKLOG 10
+#endif
+
+#ifndef MAX_LISTEN_THREAD
+#define MAX_LISTEN_THREAD 2
 #endif
 
 #ifndef _WIN32
@@ -52,58 +43,38 @@ typedef struct addrinfo ADDRINFOT;
 #define __errno() errno
 #endif
 
-#define MSGBUF_32K 1024 * 32
+#ifndef _WIN32
+#define Close(fd) close(fd)
+#else
+#define Close(fd) closesocket(fd)
+#endif
 
-#define HOSTLEN 64
-
-typedef enum {
-  _CS_IDLE,
-  _CS_REQ_STARTED,
-  _CS_REQ_SENT,
-  _CS_REQ_RECV,
-  _CS_LISTEN,
-} State;
+#define FULLRPSMSG "server is full, please wait for some minutes"
 
 typedef enum {
-  SOCKET_CLOSE = -99,
-  SOCKET_DOWN,
-  POOL_ERR = -11,  //
-  EPOLL_ERR,       //
-  IO_ERR,          //
-  MEMORY_ERR,      //
-  SSL_ERR,         //
-  SELECT_ERR,      //
-  BIND_ERR,        //
-  CONNECT_ERR,     //
-  STATE_ERR,       //
-  WAS_ERR,         //
-  OPT_ERR          // hostname exception
-} InterError;
-
-typedef enum {
-  _SSLV23_CLIENT,
-  _SSLV23_SERVER,
-  _TLSV1_CLIENT,
-  _TLSV1_SERVER,
-  _TLSV11_CLIENT,
-  _TLSV11_SERVER,
-  _TLSV12_CLIENT,
-  _TLSV12_SERVER,
-  _DTLS_CLIENT = 10,
-  _DTLS_SERVER,
-  _DTLSV1_CLIENT,
-  _DTLSV1_SERVER,
-  _DTLSV12_CLIENT,
-  _DTLSV12_SERVER,
+  _SSLV23,
+  _TLSV1,
+  _TLSV11,
+  _TLSV12,
+  _DTLS,
+  _DTLSV1,
+  _DTLSV12,
 } SSL_VER;
 
 typedef enum {
   _SSL_VER_NONE,
-  _SSL_CLI_VER_PEER,
-  _SSL_SVR_VER_PEER,
-  _SSL_SVR_VER_PEER_UPPER,
-  _SSL_VER_STYLE = 0x1000
+  _SSL_VER_PEER,
+  _SSL_VER_PEER_UPPER,
 } SSL_VERIFY;
+
+typedef enum {
+  _SSL_CA_NO = 0x10,
+  _SSL_CA_DEFAULT = 0x20,
+  _SSL_CA_NATVE = 0x30,
+  _SSL_CA_PATH = 0x40,
+  _SSL_CA_FILE = 0x50,
+  _SSL_CA_ALL = 0x60
+} SSL_CA;
 
 typedef struct {
   char* OPT_V_POLICY;
@@ -137,114 +108,74 @@ typedef struct {
   char OPT_V_NO_CHECK_TIME;
   char OPT_V_ALLOW_PROXY_CERTS;
   char OPT_V_RESV;
-} SSL_VER_OPT;
+} SSL_EXTEND_OPT;
 
 typedef enum {
-  _SSL_CA_NO = 0x00010000,
-  _SSL_CA_DEFAULT = 0x00020000,
-  _SSL_CA_NATVE = 0x00030000,
-  _SSL_CA_PATH = 0x00040000,
-  _SSL_CA_FILE = 0x00050000,
-  _SSL_CA_ALL = 0x00060000
-} SSL_CA;
+  PEM = 1,
+  ASN1,
+} SSL_FILE_VER;
 
-typedef SSL* (*callback)(void*, SOCKET fd, SSL* ssl_fd);
+typedef enum {
+  SSLVER,
+  VERIFY,
+  CERTFILE,
+  EXTEND,
+} ssl_option;
 
 typedef struct {
-  char udp_flg;  // TCP/UDP
-  char nag_flg;  // 0: default 1: close Nagle 2: user decide
-  char cls_flg;  // 0: default 1: clean socket buff
-  char ssl_flg;  // SSL/TLS 0: open 1: SSL/TLS/DTLS
-  char aio_flg;  // Win/IOCP Linux/epoll
-  char resv[3];
-  int timeout;
-  int port;
-  char* host;
+  SSL_VER ver;
+  SSL_VERIFY verify;
+  SSL_CA caopt;
+  SSL_FILE_VER filever;
+  char* cCAPath;   // CA Path
+  char* cCAFile;   // CA File
+  char* certfile;  // Certificate File
+  char* keyfile;   // Private Key File
+  char* keypass;   // Private Key File Passwd
+  SSL_EXTEND_OPT* opt;
+} ssl_info;
+
+typedef enum { UDP, NOBLOCK, TLS, AIO } option;
+
+typedef struct {
+  char udp_flg;  // 0: default 1: UDP
+  char nio_flg;  // 0: default 1: no block
+  char ssl_flg;  // 0: default 1: SSL/TLS/DTLS
+  char aio_flg;  // 0: default 1: Win/IOCP Linux/epoll
+  char resv1[3];
+  char resv2;
 } socket_option;
 
 typedef struct {
-  SOCKET fd;
-  int status;
-  int tasknum;
-  int tasklock;
-} socket_st;
+  char host[HOST_NAME_MAX];
+  int timeout;
+  int port;
+} socket_info;
 
 typedef struct {
-  int use;
-  socket_st st[MAX_CONNECT];
-} socket_fd;
-
-typedef struct {
-  SSL* ssl[MAX_CONNECT];
-  char p_flg[MAX_CONNECT];  // 0:prepare 1:ready 2:complete
-} socket_ssl_fd;
-
-typedef struct {
-  SSL_CTX* ctx;
-  SSL* ssl;
-  socket_ssl_fd* fds;
-  char p_flg;
-} socket_ssl;
-
-typedef struct {
-  int r, w;
-  char p[0];
-} socket_buff;
-
-typedef struct {
-  SOCKET fd;
-  State state;
+  void* fd;
   socket_option opt;
-  socket_buff* buf;
-  socket_ssl* ssl_st;
-  socket_fd* cli_fd;
-} socket_base;
+  socket_info info;
+  ssl_info sslInfo;
+} Socket;
 
-typedef struct {
-  socket_base* mSocket;
-  int (*fin)(void*);
-  int (*send)(void*, char*, int);
-  int (*recv)(void*, char*, int);
-  int (*load_cert_file)(void*, int, int, int, int, ...);
-#ifndef _SOCKET_SERVER
-  int (*connect)(void*);
-  int (*ssl_connect)(void*);
-#else
-  struct thread_pool* pool;
-  SSL* (*callback)(void*, SOCKET, SSL*);
-  int (*listen)(void*);
-  SSL* (*ssl_bind)(void*, SOCKET fd);
-  char* heloMsg;
-#endif
-} socket_function;
+typedef int (*SendCallback)(unsigned channel, int port, char* pBuf, unsigned size);
+typedef int (*RecvCallback)(unsigned channel, int port, char* pBuf, unsigned size);
 
-socket_function* initClient(socket_option* opt);
-socket_function* initServer(socket_option* opt, callback cb, char* msg);
-int final(socket_function* fun);
-int __connect(socket_function* owner);
-int __close(socket_function* owner, int group, int idx);
-int __fin(socket_function* owner);
-int __send(socket_function* owner, char* buf, int size);
-int __recv(socket_function* owner, char* buf, int size);
-int __load_cert_file(socket_function* owner, int sslV, int verifyCA, int filev,
-                     int args, ...);
-int __bind(socket_function* owner);
-int __ssl_listen(socket_function* owner);
-SSL* __ssl_bind(socket_function* owner, SOCKET fd);
+int InitSocket(Socket* socket);
+int SetSocketInfo(Socket* socket, const char* host, unsigned port,
+                  unsigned timeout);
+int SetSocketOption(Socket* socket, option opt, int val);
+int SetSSLOption(Socket* socket, ssl_option opt, ...);
+int SocketSend(Socket* socket, char* buff, unsigned size);
+int SocketRecv(Socket* socket, char* buff, unsigned size);
+int SocketBind(Socket* socket, RecvCallback pRecv, SendCallback pSend);
+int EndSocket(Socket* socket);
 
-#define IsEmpty(buf) ((buf->r == 0) && (buf->w == -1))
-int __open(socket_function* owner);
-int __close0(socket_function* owner);
-int __ssl_connect(socket_function* owner);
-int __optchk(socket_option* opt);
-int __sslErr(char* file, int line, int err, char* fun);
-int __sslChk(SSL* ssl_st, int ret);
+int Select(int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds,
+           int timeout);
 
-int __bio_read(socket_base* socket, char* buf, int size);
-int __bio_write(socket_base* socket, char* buf, int size);
-int __nio_accept(socket_function* owner);
-
-#ifdef _DEBUG
+#ifdef _TEST_DEBUG
 #ifndef ERROUT
 #define ERROUT(fun, err)                                                       \
   printf("error appear at %s:%d in %s, errno = %d\n", __FILE__, __LINE__, fun, \

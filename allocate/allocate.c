@@ -7,12 +7,12 @@
 #include <pthread.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <stdint.h>
 #endif
 
 #include <malloc.h>
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
 
 #ifndef _WIN32
 typedef uintptr_t thrd_t;
@@ -118,7 +118,7 @@ struct ThreadHeapBlock *_allocate_threadInfo_block(
   switch (tid) {
     case -1:
 #ifndef _WIN32
-      pTHeap->tid = pthread_sef();
+      pTHeap->tid = pthread_self();
 #else
       pTHeap->tid = GetCurrentThreadId();
 #endif
@@ -431,7 +431,7 @@ void *_allocate(unsigned int ulAreaSize) {
   struct ThreadHeapBlock *ptHeap;
   struct ThreadHeapBlock tHeap;
 #ifndef _WIN32
-  tid = pthread_sef();
+  tid = pthread_self();
 #else
   tid = GetCurrentThreadId();
 #endif
@@ -561,7 +561,7 @@ void _release_thread_block() {
   struct ThreadHeapBlock *ptHeap;
   struct ThreadHeapBlock tHeap;
 #ifndef _WIN32
-  tid = pthread_sef();
+  tid = pthread_self();
 #else
   tid = GetCurrentThreadId();
 #endif
@@ -726,7 +726,7 @@ void _release(void *ptr, int size) {
   struct ThreadHeapBlock *ptHeap;
   struct ThreadHeapBlock tHeap;
 #ifndef _WIN32
-  tid = pthread_sef();
+  tid = pthread_self();
 #else
   tid = GetCurrentThreadId();
 #endif

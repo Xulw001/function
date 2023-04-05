@@ -9,7 +9,7 @@ void lock(unsigned int* lock_t) {
   while (_InterlockedCompareExchange((unsigned long*)lock_t, LOCK, FREE) ==
          LOCK)
 #else
-  // return 1 while success£¬othersize return 0
+  // return 1 while success, othersize return 0
   while (__sync_bool_compare_and_swap(lock_t, FREE, LOCK) == 0)
 #endif
     ;

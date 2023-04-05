@@ -6,7 +6,7 @@ SED := sed
 MV := mv
 
 ## Include Dir
-INCLUDE-DIR := $(C_HOME)/include
+INCLUDE-DIR := $(C_HOME)/include .
 INCLUDE = $(if $(INCLUDE-DIR),$(addprefix -I,$(INCLUDE-DIR)),)
 
 TARGET := Test

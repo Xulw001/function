@@ -7,6 +7,9 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 #include "../algorithm/hash.h"
 

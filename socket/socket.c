@@ -1,191 +1,242 @@
-#include "socket.h"
+#include "server.h"
+#include "ssl_client.h"
+#include "ssl_server.h"
 
-int __optchk(socket_option* opt) {
-  char flg = opt->udp_flg | opt->aio_flg | opt->cls_flg | opt->ssl_flg;
-  if (flg < 0 || flg > 1) return OPT_ERR;
-
-  if (opt->nag_flg < 0 || opt->nag_flg > 2) return OPT_ERR;
-
-  if (opt->port < 0 || opt->port > 65536) return OPT_ERR;
-
-  if (opt->host == 0 || opt->host[0] == '\0') return OPT_ERR;
-  return 0;
-}
-
-int __open(socket_function* owner) {
+int InitSocket(Socket* pSocket) {
 #ifdef _WIN32
   WSADATA wsaData;
   WORD wVersion;
   wVersion = MAKEWORD(2, 2);
   if (WSAStartup(wVersion, &wsaData) != 0) {
     ERROUT("WSAStartup", __errno());
-    return WAS_ERR;
+    return -1;
   }
 
   if (wVersion != wsaData.wVersion) {
     WSACleanup();
     ERROUT("WSAStartup.wVersion", wVersion);
-    return WAS_ERR;
+    return -1;
   }
 #endif
-
-  if (owner->mSocket->opt.ssl_flg != 0) {
-#ifdef _WIN32
-    while (RAND_status() == 0)
-      ;
-#endif
-    SSL_library_init();
-    SSL_load_error_strings();
-  }
   return 0;
 }
 
-int final(socket_function* fun) {
-  int err = 0;
-  if (fun == NULL) {
-    return 0;
+int SetSocketInfo(Socket* socket, const char* host, unsigned port,
+                  unsigned timeout) {
+  if (host == 0 || *host == '\0') {
+    return -1;
+  } else {
+    strncpy(socket->info.host, host, sizeof(socket->info.host));
   }
 
-  if (fun->mSocket == 0) {
-    free(fun);
-    return 0;
+  if (port < 0 || port > 65536) {
+    return -1;
+  } else {
+    socket->info.port = port;
   }
 
-  if ((err = __close(fun, -1, 0)) != 0) {
-    return err;
-  }
+  socket->info.timeout = timeout;
 
-  if (fun->mSocket->buf != NULL) {
-    free(fun->mSocket->buf);
-    fun->mSocket->buf = NULL;
-  }
-
-  if (fun->mSocket->opt.host != NULL) {
-    free(fun->mSocket->opt.host);
-    fun->mSocket->opt.host = NULL;
-  }
-
-  free(fun->mSocket);
-  fun->mSocket = NULL;
+  socket->fd = NULL;
 
   return 0;
 }
 
-int __fin(socket_function* owner) {
-  int err = 0;
-  socket_buff* buff = 0;
-
-  buff = owner->mSocket->buf;
-  switch (owner->mSocket->state) {
-    case _CS_REQ_SENT:
-      err = __bio_write(owner->mSocket, buff->p + buff->r, buff->w - buff->r);
-      if (err < 0) {
-        return err;
-      }
+int SetSocketOption(Socket* socket, option opt, int val) {
+  switch (opt) {
+    case UDP:
+      socket->opt.udp_flg = val;
       break;
-    case _CS_REQ_RECV:
-      while ((err = __bio_read(owner->mSocket, buff->p, MSGBUF_32K)) != 0) {
-        if (err < 0) {
-          return err;
-        } else if (err < MSGBUF_32K) {
-          break;
-        }
-      }
+    case NOBLOCK:
+      socket->opt.nio_flg = val;
       break;
+    case TLS:
+      socket->opt.ssl_flg = val;
+      break;
+    case AIO:
+      socket->opt.aio_flg = val;
+      break;
+    default:
+      return -1;
   }
-  owner->mSocket->buf->r = 0;
-  owner->mSocket->buf->w = -1;
   return 0;
 }
 
-int __close(socket_function* owner, int group, int idx) {
-  if (group == -1) {
-    return __close0(owner);
-  }
-  if (owner->mSocket->ssl_st->fds != NULL) {
-    if (owner->mSocket->ssl_st->fds[group].ssl[idx]) {
-      if (SSL_shutdown(owner->mSocket->ssl_st->fds[group].ssl[idx]) != 1) {
-        __sslErr(__FILE__, __LINE__, __errno(), "SSL_shutdown");
+int SetSSLOption(Socket* socket, ssl_option opt, ...) {
+  int err = 0;
+  va_list va;
+  va_start(va, opt);
+  switch (opt) {
+    case SSLVER: {
+      socket->sslInfo.ver = va_arg(va, int);
+      if (socket->sslInfo.ver < _SSLV23 || socket->sslInfo.ver > _DTLSV12) {
+        err = -1;
       }
-      SSL_free(owner->mSocket->ssl_st->fds[group].ssl[idx]);
-      owner->mSocket->ssl_st->fds[group].ssl[idx] = 0x00;
-      owner->mSocket->ssl_st->fds[group].p_flg[idx] = 1;
-    }
-  }
+    } break;
+    case VERIFY: {
+      int opt = va_arg(va, int);
+      socket->sslInfo.verify = opt & 0xf;
+      socket->sslInfo.caopt = opt & 0xf0;
+      if (socket->sslInfo.verify < _SSL_VER_NONE ||
+          socket->sslInfo.verify > _SSL_VER_PEER_UPPER) {
+        err = -1;
+        break;
+      }
+      if (socket->sslInfo.caopt < _SSL_CA_NO ||
+          socket->sslInfo.caopt > _SSL_CA_ALL) {
+        err = -1;
+        break;
+      }
 
-  if (owner->mSocket->cli_fd != NULL) {
-    if (owner->mSocket->cli_fd[group].st[idx].fd != INVALID_SOCKET) {
-#ifndef _WIN32
-      close(owner->mSocket->cli_fd[group].st[idx].fd);
-#else
-      closesocket(owner->mSocket->cli_fd[group].st[idx].fd);
-#endif
-      owner->mSocket->cli_fd[group].st[idx].fd = INVALID_SOCKET;
-#ifdef _WIN32
-      _InterlockedDecrement((unsigned long*)&owner->mSocket->cli_fd[group].use);
-#else
-      __sync_fetch_and_sub(&owner->mSocket->cli_fd[group].use, 1);
-#endif
-    }
-  }
+      if (_SSL_VER_NONE != socket->sslInfo.verify &&
+          _SSL_CA_NO == socket->sslInfo.caopt) {
+        err = -1;
+        break;
+      }
 
-  return 0;
-}
-
-int __close0(socket_function* owner) {
-  if (owner->mSocket->state == _CS_IDLE) {
-    WARNING("close when not connect");
-    return 0;
-  }
-
-  if (owner->mSocket->ssl_st->ssl != NULL) {
-    if (owner->mSocket->ssl_st->fds) {
-      socket_ssl_fd* fd = owner->mSocket->ssl_st->fds;
-      for (int i = 0; i < CT_NUM; i++) {
-        for (int k = 0; k < MAX_CONNECT; k++) {
-          if (fd[i].ssl[k]) {
-            SSL_shutdown(fd[i].ssl[k]);
-            SSL_free(fd[i].ssl[k]);
-            fd[i].ssl[k] = 0x00;
+      char* filepath = NULL;
+      switch (socket->sslInfo.caopt) {
+        case _SSL_CA_PATH:
+          filepath = va_arg(va, char*);
+          if (NULL == filepath) {
+            err = -1;
+            break;
           }
-        };
+          socket->sslInfo.cCAPath = (char*)malloc(strlen(filepath) + 1);
+          strcpy(socket->sslInfo.cCAPath, filepath);
+          break;
+        case _SSL_CA_FILE:
+          filepath = va_arg(va, char*);
+          if (NULL == filepath) {
+            err = -1;
+            break;
+          }
+          socket->sslInfo.cCAFile = (char*)malloc(strlen(filepath) + 1);
+          strcpy(socket->sslInfo.cCAFile, filepath);
+          break;
+        case _SSL_CA_ALL:
+          filepath = va_arg(va, char*);
+          if (NULL == filepath) {
+            err = -1;
+            break;
+          }
+          socket->sslInfo.cCAPath = (char*)malloc(strlen(filepath) + 1);
+          strcpy(socket->sslInfo.cCAPath, filepath);
+          filepath = va_arg(va, char*);
+          if (NULL == filepath) {
+            err = -1;
+            break;
+          }
+          socket->sslInfo.cCAFile = (char*)malloc(strlen(filepath) + 1);
+          strcpy(socket->sslInfo.cCAFile, filepath);
+          break;
+        default:
+          break;
       }
-    }
-    SSL_shutdown(owner->mSocket->ssl_st->ssl);
-    SSL_free(owner->mSocket->ssl_st->ssl);
-    owner->mSocket->ssl_st->ssl = 0;
-  }
-
-  if (owner->mSocket->ssl_st->ctx != NULL)
-    SSL_CTX_free(owner->mSocket->ssl_st->ctx);
-
-  if (owner->mSocket->cli_fd != NULL) {
-    socket_fd* pfd = owner->mSocket->cli_fd;
-    for (int i = 0; i < CT_NUM; i++) {
-      if (pfd->use == 0) continue;
-      for (int k = 0; k < MAX_CONNECT; k++) {
-        if (pfd[i].st[k].fd) {
-#ifndef _WIN32
-          close(pfd[i].st[k].fd);
-#else
-          closesocket(pfd[i].st[k].fd);
-#endif
-          pfd[i].st[k].fd = INVALID_SOCKET;
-        }
+    } break;
+    case CERTFILE: {
+      socket->sslInfo.filever = va_arg(va, int);
+      if (socket->sslInfo.filever < PEM || socket->sslInfo.filever > ASN1) {
+        err = -1;
       }
-    }
-    owner->mSocket->cli_fd = 0x00;
-  }
 
-  if (owner->mSocket->fd != INVALID_SOCKET) {
-#ifndef _WIN32
-    close(owner->mSocket->fd);
-#else
-    closesocket(owner->mSocket->fd);
-    WSACleanup();
-#endif
-    owner->mSocket->fd = INVALID_SOCKET;
+      char* filepath = NULL;
+      filepath = va_arg(va, char*);
+      if (NULL == filepath) {
+        err = -1;
+        break;
+      }
+      socket->sslInfo.certfile = (char*)malloc(strlen(filepath) + 1);
+      strcpy(socket->sslInfo.certfile, filepath);
+
+      filepath = va_arg(va, char*);
+      if (NULL == filepath) {
+        err = -1;
+        break;
+      }
+      socket->sslInfo.keyfile = (char*)malloc(strlen(filepath) + 1);
+      strcpy(socket->sslInfo.keyfile, filepath);
+
+      filepath = va_arg(va, char*);
+      if (filepath != NULL) {
+        socket->sslInfo.keypass = (char*)malloc(strlen(filepath) + 1);
+        strcpy(socket->sslInfo.keypass, filepath);
+      }
+    } break;
+    case EXTEND: {
+      SSL_EXTEND_OPT* pOpt = va_arg(va, SSL_EXTEND_OPT*);
+      if (NULL == pOpt) {
+        err = -1;
+        break;
+      }
+      socket->sslInfo.opt = (SSL_EXTEND_OPT*)malloc(sizeof(SSL_EXTEND_OPT));
+      memcpy(socket->sslInfo.opt, pOpt, sizeof(SSL_EXTEND_OPT));
+    } break;
+    default: {
+      err = -1;
+    } break;
   }
-  owner->mSocket->state = _CS_IDLE;
+  va_end(va);
+  return err;
+}
+
+int SocketSend(Socket* socket, char* buff, unsigned size) {
+  if (socket->opt.ssl_flg) {
+    return SSLSendMsg(socket, buff, size);
+  } else {
+    return SendMsg(socket, buff, size);
+  }
+}
+
+int SocketRecv(Socket* socket, char* buff, unsigned size) {
+  if (socket->opt.ssl_flg) {
+    return SSLRecvMsg(socket, buff, size);
+  } else {
+    return RecvMsg(socket, buff, size);
+  }
   return 0;
+}
+
+int SocketBind(Socket* socket, RecvCallback pRecv, SendCallback pSend) {
+  if (socket->opt.udp_flg && socket->opt.ssl_flg) {
+    return UDPSSLBind(socket, pRecv, pSend);
+  } else if (socket->opt.udp_flg && !socket->opt.ssl_flg) {
+    return UDPBind(socket, pRecv, pSend);
+  } else if (!socket->opt.udp_flg && socket->opt.ssl_flg) {
+    return SSLBind(socket, pRecv, pSend);
+  } else if (!socket->opt.udp_flg && !socket->opt.ssl_flg) {
+    return TCPBind(socket, pRecv, pSend);
+  }
+  return 0;
+}
+
+int EndSocket(Socket* socket) {
+  if (socket->opt.resv2 == 0x01) {
+    if (!socket->opt.ssl_flg) {
+      return EndServer(socket);
+    } else {
+      return EndSSLServer(socket);
+    }
+  } else {
+    if (!socket->opt.ssl_flg) {
+      return EndClient(socket);
+    } else {
+      return EndSSLClient(socket);
+    }
+  }
+}
+
+int Select(int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds,
+           int timeout) {
+  struct timeval tvTimeOut;
+  tvTimeOut.tv_sec = timeout;
+  tvTimeOut.tv_usec = 0;
+  nfds = select(nfds, readfds, writefds, exceptfds, &tvTimeOut);
+  if (nfds == 0) {
+    return 0;
+  } else if (nfds < 0) {
+    ERROUT("select", __errno());
+    return -1;
+  }
+  return nfds;
 }

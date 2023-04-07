@@ -84,7 +84,7 @@ int InitClient(Socket* pSocket) {
     goto ERR;
   }
 
-  if (pSocket->opt.nio_flg == 1) {
+  if (pSocket->opt.nio_flg && pSocket->opt.ssl_flg) {
     option = 1;
 #ifndef _WIN32
     if (ioctl(psock->fd, FIONBIO, &option))

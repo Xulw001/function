@@ -126,7 +126,7 @@ int SSLSend(ssl_channel* socket, char* buff, unsigned size) {
         return -1;
       }
     }
-  } while (totalSize == 0);
+  } while (totalSize < 0);
   return totalSize;
 }
 
@@ -166,6 +166,6 @@ int SSLRecv(ssl_channel* socket, char* buff, unsigned size) {
         return 0;
       }
     }
-  } while (totalSize == 0);
+  } while (totalSize < 0);
   return totalSize;
 }

@@ -146,7 +146,7 @@ int EndSSLServer(Socket* socket) {
       sleep(1);
 #endif
     }
-    SSL_Close(((ssl_channel*)socket->fd)->ssl, channel->fd);
+    Close(channel->fd);
     free(channel);
     ((ssl_channel*)socket->fd)->psock = NULL;
     free(socket->fd);
@@ -205,9 +205,10 @@ int SSLListen(void* pSocket) {
 
   memset(ssl, 0x00, sizeof(ssl));
   fd[0] = socket->fd;
-  ssl[0] = sslSocket->ssl;
+  ssl[0] = (SSL*)-1;
   while (socket->state == _CS_IDLE) {
     next = used;
+    maxfd = 0;
     FD_ZERO(&fds);
     for (int i = 0, j = 0; i < MAX_CONNECT && j < used; i++) {
       if (ssl[i] != NULL) {
@@ -293,7 +294,9 @@ int SSLListen(void* pSocket) {
     if (socket->mutex == LOCK) {
       unlock(&socket->mutex);
     }
-
+#ifndef _WIN32
+    signal(SIGPIPE, SIG_IGN);
+#endif
     for (int i = 1; i < MAX_CONNECT && 0 < nfds; i++) {
       if (FD_ISSET(fd[i], &fds)) {
         nfds--;

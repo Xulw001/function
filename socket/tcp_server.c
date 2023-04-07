@@ -150,7 +150,9 @@ u_int TCPListen(void* pSocket) {
     if (socket->mutex == LOCK) {
       unlock(&socket->mutex);
     }
-
+#ifndef _WIN32
+    signal(SIGPIPE, SIG_IGN);
+#endif
     for (int i = 1; i < MAX_CONNECT && 0 < nfds; i++) {
       if (FD_ISSET(fd[i], &fds)) {
         nfds--;

@@ -5,6 +5,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <string.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <errno.h>
 #else

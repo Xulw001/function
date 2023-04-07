@@ -8,34 +8,32 @@
 #include "socket.h"
 
 #ifndef _WIN32
-#define SSL_Close(ssl, fd)                                     \
-  if (ssl != NULL) {                                           \
-    do {                                                       \
-      int ret = SSL_shutdown(ssl);                             \
-      if (ret == 0) {                                          \
-        ret = SSL_shutdown(ssl);                               \
-      }                                                        \
-      if (ret != 1) {                                          \
-        SslErr(__FILE__, __LINE__, __errno(), "SSL_shutdown"); \
-      }                                                        \
-    } while (0);                                               \
-    SSL_free(ssl);                                             \
-  }                                                            \
+#define SSL_Close(ssl, fd)                                              \
+  if (ssl != NULL) {                                                    \
+    do {                                                                \
+      int ret = SSL_shutdown(ssl);                                      \
+      if (ret == 0) {                                                   \
+        ret = SSL_shutdown(ssl);                                        \
+      }                                                                 \
+      if (ret != 1)                                                     \
+        SslErr(__FILE__, __LINE__, SslCheck(ssl, ret), "SSL_shutdown"); \
+    } while (0);                                                        \
+    SSL_free(ssl);                                                      \
+  }                                                                     \
   close(fd);
 #else
-#define SSL_Close(ssl, fd)                                     \
-  if (ssl != NULL) {                                           \
-    do {                                                       \
-      int ret = SSL_shutdown(ssl);                             \
-      if (ret == 0) {                                          \
-        ret = SSL_shutdown(ssl);                               \
-      }                                                        \
-      if (ret != 1) {                                          \
-        SslErr(__FILE__, __LINE__, __errno(), "SSL_shutdown"); \
-      }                                                        \
-    } while (0);                                               \
-    SSL_free(ssl);                                             \
-  }                                                            \
+#define SSL_Close(ssl, fd)                                              \
+  if (ssl != NULL) {                                                    \
+    do {                                                                \
+      int ret = SSL_shutdown(ssl);                                      \
+      if (ret == 0) {                                                   \
+        ret = SSL_shutdown(ssl);                                        \
+      }                                                                 \
+      if (ret != 1)                                                     \
+        SslErr(__FILE__, __LINE__, SslCheck(ssl, ret), "SSL_shutdown"); \
+    } while (0);                                                        \
+    SSL_free(ssl);                                                      \
+  }                                                                     \
   closesocket(fd);
 #endif
 

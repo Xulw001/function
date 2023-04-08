@@ -67,7 +67,7 @@ int InitServer(Socket* pSocket) {
       goto ERR;
     }
 
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(__linux__)
     option = 1;
     if ((setsockopt(psock->fd, SOL_SOCKET, SO_REUSEPORT, (const void*)&option,
                     sizeof(option))) != 0) {

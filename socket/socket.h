@@ -153,6 +153,12 @@ typedef struct {
   int port;
 } socket_info;
 
+typedef union {
+  struct sockaddr_in v4;
+  struct sockaddr_in6 v6;
+  struct sockaddr_storage ss;
+} sockaddr_info;
+
 typedef struct {
   void* fd;
   socket_option opt;

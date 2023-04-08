@@ -4,6 +4,7 @@
 typedef struct {
   SOCKET fd;
   int timeout;
+  sockaddr_info svraddr;
 } channel;
 
 int InitClient(Socket* socket);

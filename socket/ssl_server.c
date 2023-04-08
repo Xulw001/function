@@ -378,26 +378,28 @@ int SSLCallBack(SSL* ssl, SOCKET fd, RecvCallback pRecv, SendCallback pSend,
 
 int UDPSSLListen(void* pSocket) {
   ssl_channel* sslSocket = pSocket;
-  channel_extend* socket = pSocket;
+  channel_extend* socket = sslSocket->psock;
   int err;
   fd_set fds;
   int nfds, maxfd;
   int used = 1, next;
   SOCKET cfd, fd[MAX_CONNECT];
+  SSL *cssl, *ssl[MAX_CONNECT];
   struct timeval tvTimeOut;
   sockaddr_info cliAddr;
   char sbuf[MSGBUF_8K];
   int size = 0;
   int slen = 0;
 
-  memset(fd, INVALID_SOCKET, sizeof(fd));
+  memset(ssl, 0x00, sizeof(ssl));
   fd[0] = socket->fd;
+  ssl[0] = (SSL*)-1;
   while (socket->state == _CS_IDLE) {
-    maxfd = 0;
     next = used;
+    maxfd = 0;
     FD_ZERO(&fds);
     for (int i = 0, j = 0; i < MAX_CONNECT && j < used; i++) {
-      if (fd[i] != INVALID_SOCKET) {
+      if (ssl[i] != NULL) {
         FD_SET(fd[i], &fds);
         if (maxfd < fd[i]) {
           maxfd = fd[i];
@@ -421,92 +423,113 @@ int UDPSSLListen(void* pSocket) {
 
     if (FD_ISSET(socket->fd, &fds)) {
       nfds--;
-      slen = sizeof(cliAddr);
-      size = recvfrom(socket->fd, sbuf, MSGBUF_8K, 0,
-                      (struct sockaddr*)&cliAddr, &slen);
-      unlock(&socket->mutex);
-      if (size < 0) {
-        err = __errno();
-        if (socket->noblock != 1 || (err != EAGAIN && err != EWOULDBLOCK)) {
-          ERROUT("recvfrom", err);
-        }
-        continue;
-      }
-
-      if (used >= MAX_CONNECT) {
-        WARNING("accept when socket queue is full");
-        err = sendto(socket->fd, FULLRPSMSG, sizeof(FULLRPSMSG), 0,
-                     (struct sockaddr*)&cliAddr, slen);
-        if (err < 0) {
-          ERROUT("send", err);
-        }
-        continue;
-      }
-
-      cfd = UDPSocket(&socket->svraddr, &cliAddr);
-      if (cfd < 0) {
-        WARNING("create socket failed");
-        continue;
-      }
-
-      if (socket->noblock == 1) {
-        u_long option = 1;
-#ifndef _WIN32
-        if (ioctl(cfd, FIONBIO, &option))
-#else
-        if (ioctlsocket(cfd, FIONBIO, &option))
-#endif
-        {
-          ERROUT("ioctl", __errno());
-          Close(cfd);
-          continue;
-        }
-      }
-
-      err = socket->pRecv(cfd, 0, sbuf, size);
-      if (err < 0) {
-        continue;
-      }
-
+      int del = 0;
       do {
-        size = socket->pSend(cfd, 0, sbuf, MSGBUF_8K);
-        if (size <= 0) {
-          err = size;
+        cssl = SSL_new(sslSocket->ctx);
+        if (cssl == NULL) {
+          SslErr(__FILE__, __LINE__, __errno(), "SSL_new");
           break;
         }
 
-        do {
-          err = send(cfd, sbuf, size, 0);
-          if (err < 0) {
-            err = __errno();
-            if (!socket->noblock ||
-                (err != EINTR && err != EAGAIN && err != EWOULDBLOCK)) {
-              ERROUT("send", err);
-              break;
-            }
-            continue;
-          }
-        } while (err < 0);
-      } while (MSGBUF_8K <= size);
+        BIO* bio = BIO_new_dgram(socket->fd, BIO_NOCLOSE);
+        if (bio == NULL) {
+          SslErr(__FILE__, __LINE__, __errno(), "BIO_new_dgram");
+          del = 1;
+          break;
+        }
 
-      if (err < 0) {
-        Close(cfd);
+        SSL_set_bio(cssl, bio, bio);
+        SSL_set_options(cssl, SSL_OP_COOKIE_EXCHANGE);
+
+        if (DTLSv1_listen(cssl, (BIO_ADDR*)&cliAddr) <= 0) {
+          SslErr(__FILE__, __LINE__, __errno(), "DTLSv1_listen");
+          del = 1;
+          break;
+        }
+
+        cfd = UDPSocket(&socket->svraddr, &cliAddr);
+        if (cfd < 0) {
+          WARNING("create socket failed");
+          del = 1;
+          break;
+        }
+
+        if (socket->noblock == 1) {
+          u_long option = 1;
+#ifndef _WIN32
+          if (ioctl(cfd, FIONBIO, &option))
+#else
+          if (ioctlsocket(cfd, FIONBIO, &option))
+#endif
+          {
+            ERROUT("ioctl", __errno());
+            del = 1;
+            break;
+          }
+        }
+
+        BIO_set_fd(SSL_get_rbio(cssl), cfd, BIO_NOCLOSE);
+        BIO_ctrl(SSL_get_rbio(cssl), BIO_CTRL_DGRAM_SET_CONNECTED, 0,
+                 &cliAddr.ss);
+        do {
+          err = SSL_accept(cssl);
+        } while (err == 0);
+        if (err < 0) {
+          SslCheck(cssl, -1);
+          SslErr(__FILE__, __LINE__, __errno(), "SSL_accept");
+          del = 1;
+          break;
+        }
+
+        if (used >= MAX_CONNECT) {
+          WARNING("accept when socket queue is full");
+          err = SSL_write(cssl, FULLRPSMSG, sizeof(FULLRPSMSG));
+          if (err < 0) {
+            ERROUT("SSL_write", err);
+          }
+          del = 1;
+          break;
+        }
+
+        err = SSLCallBack(cssl, cfd, socket->pRecv, socket->pSend,
+                          socket->noblock, 0);
+        if (err != 0) {
+          del = 1;
+          break;
+        }
+
+      } while (0);
+
+      size = recvfrom(socket->fd, sbuf, MSGBUF_8K, 0,
+                      (struct sockaddr*)&cliAddr, &slen);
+      if (size < 0) {
+        ERROUT("recvfrom", err);
+      }
+
+      if (del) {
+        SSL_Close(cssl, cfd);
+        unlock(&socket->mutex);
         continue;
       }
+
       fd[next] = cfd;
+      ssl[next] = cssl;
       used++;
     }
     if (socket->mutex == LOCK) {
       unlock(&socket->mutex);
     }
-
+#ifndef _WIN32
+    signal(SIGPIPE, SIG_IGN);
+#endif
     for (int i = 1; i < MAX_CONNECT && 0 < nfds; i++) {
       if (FD_ISSET(fd[i], &fds)) {
         nfds--;
-        err = CallBack(fd[i], socket->pRecv, socket->pSend, socket->noblock, 0);
+        err = SSLCallBack(ssl[i], fd[i], socket->pRecv, socket->pSend,
+                          socket->noblock, 0);
         if (err != 0) {
-          Close(fd[i]);
-          fd[i] = INVALID_SOCKET;
+          SSL_Close(ssl[i], fd[i]);
+          ssl[i] = NULL;
           used--;
         }
       }
@@ -514,8 +537,9 @@ int UDPSSLListen(void* pSocket) {
   }
 
   for (int i = 1, j = 1; i < MAX_CONNECT && j < used; i++) {
-    if (fd[i] != INVALID_SOCKET) {
-      Close(fd[i]);
+    if (ssl[i] != NULL) {
+      SSL_Close(ssl[i], fd[i]);
+      ssl[i] = NULL;
       fd[i] = INVALID_SOCKET;
       j++;
     }

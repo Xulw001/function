@@ -55,10 +55,15 @@ int InitSSLClient(Socket* pSocket) {
   if (pssl->ssl == NULL)
     return SslErr(__FILE__, __LINE__, __errno(), "SSL_new");
 
-  if (!SSL_set_fd(pssl->ssl, psock->fd))
-    return SslErr(__FILE__, __LINE__, __errno(), "SSL_set_fd");
-
-  SSL_set_connect_state(pssl->ssl);
+  if (pSocket->opt.udp_flg) {
+    BIO* bio = BIO_new_dgram(psock->fd, BIO_CLOSE);
+    BIO_ctrl(bio, BIO_CTRL_DGRAM_SET_CONNECTED, 0, &psock->svraddr.ss);
+    SSL_set_bio(pssl->ssl, bio, bio);
+  } else {
+    if (!SSL_set_fd(pssl->ssl, psock->fd))
+      return SslErr(__FILE__, __LINE__, __errno(), "SSL_set_fd");
+    SSL_set_connect_state(pssl->ssl);
+  }
 
   SSL_set_tlsext_host_name(pssl->ssl, pSocket->info.host);
 

@@ -138,7 +138,7 @@ SOCKET UDPSocket(sockaddr_info* svrAddr, sockaddr_info* cliAddr) {
     goto Err;
   }
 
-#if defined(SO_REUSEPORT) && !defined(__linux__)
+#if !defined(_WIN32) && !defined(__linux__)
   if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, (const void*)&option,
                  (socklen_t)sizeof(option) != 0)) {
     ERROUT("setsockopt", __errno());

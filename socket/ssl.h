@@ -48,3 +48,5 @@ int InitSSLSocket(Socket* pSocket, int flag);
 int SslCheck(SSL* ssl, int ret);
 int SslErr(char* file, int line, int err, char* fun);
 int OptVerify(SSL_EXTEND_OPT* opt, X509_VERIFY_PARAM* vpm);
+int VerifyCookie(SSL* ssl, const unsigned char* cookie, unsigned cookie_len);
+int GenerateCookie(SSL* ssl, unsigned char* cookie, unsigned* cookie_len);

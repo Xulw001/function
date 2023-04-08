@@ -15,12 +15,6 @@ typedef enum {
   _CS_END,
 } State;
 
-typedef union {
-  struct sockaddr_in v4;
-  struct sockaddr_in6 v6;
-  struct sockaddr_storage ss;
-} sockaddr_info;
-
 typedef struct {
   SOCKET fd;
   unsigned mutex;  // lock for select

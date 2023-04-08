@@ -84,6 +84,10 @@ int InitClient(Socket* pSocket) {
     goto ERR;
   }
 
+  if (pSocket->opt.udp_flg && pSocket->opt.ssl_flg) {
+    memcpy(&psock->svraddr, (PSOCKADDR)pAI->ai_addr, pAI->ai_addrlen);
+  }
+
   if (pSocket->opt.nio_flg && pSocket->opt.ssl_flg) {
     option = 1;
 #ifndef _WIN32
